@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info } from "lucide-react";
 
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -129,6 +129,25 @@ function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets }) {
         </div>
       )}
       {!insight && !loading && !error && <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.7, marginTop: 16 }}>Clique em "Gerar Análise" para receber um diagnóstico profundo de seus padrões, possíveis vazamentos de EV e recomendações acionáveis feitas por Inteligência Artificial.</div>}
+    </div>
+  );
+}
+
+function InfoTooltip({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div 
+      className="tooltip-container" 
+      onMouseEnter={() => setOpen(true)} 
+      onMouseLeave={() => setOpen(false)}
+      onClick={() => setOpen(!open)}
+    >
+      <Info size={13} className="tooltip-icon" />
+      {open && (
+        <div className="tooltip-content animate-fade-in">
+          {text}
+        </div>
+      )}
     </div>
   );
 }
@@ -288,19 +307,25 @@ export default function BankrollVault() {
             {/* DASHBOARD */}
             {view === "dashboard" && <>
               <div className="grid-4">
-                {[{ label: "ROI", val: fmtPct(stats.roi), color: stats.roi >= 0 ? "g" : "r" }, 
-                  { label: "YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? "g" : "r" }, 
-                  { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, color: "text" }, 
-                  { label: "CLV MÉDIO", val: stats.avgCLV != null ? fmtPct(stats.avgCLV) : "—", color: stats.avgCLV != null ? (stats.avgCLV >= 0 ? "g" : "r") : "muted" }].map(k => (
-                  <div key={k.label} className="card"><span className="kpi-label">{k.label}</span><div className={`kpi-value ${k.color}`}>{k.val}</div></div>
+                {[{ label: "ROI", val: fmtPct(stats.roi), color: stats.roi >= 0 ? "g" : "r", tip: "Retorno Sobre Investimento. Mede o seu lucro líquido em relação à banca inicial." }, 
+                  { label: "YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? "g" : "r", tip: "Eficiência. Mostra a porcentagem de lucro sobre todo o volume financeiro apostado." }, 
+                  { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, color: "text", tip: "Porcentagem de vitórias em relação ao total de apostas concluídas." }, 
+                  { label: "CLV MÉDIO", val: stats.avgCLV != null ? fmtPct(stats.avgCLV) : "—", color: stats.avgCLV != null ? (stats.avgCLV >= 0 ? "g" : "r") : "muted", tip: "Closing Line Value. Se positivo, significa que você bateu a casa de aposta e comprou odds maiores do que o valor de fechamento (O que garante lucro a longo prazo)." }].map(k => (
+                  <div key={k.label} className="card">
+                    <span className="kpi-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{k.label} {k.tip && <InfoTooltip text={k.tip} />}</span>
+                    <div className={`kpi-value ${k.color}`}>{k.val}</div>
+                  </div>
                 ))}
               </div>
               <div className="grid-4">
                 {[{ label: "APOSTAS", val: stats.totalBets, color: "text" }, 
                   { label: "VITÓRIAS", val: stats.wins, color: "g" }, 
                   { label: "DERROTAS", val: stats.losses, color: "r" }, 
-                  { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : ""}R$${Math.round(stats.totalPL)}`, color: stats.totalPL >= 0 ? "g" : "r" }].map(k => (
-                  <div key={k.label} className="card" style={{ padding: "16px" }}><span className="kpi-label" style={{ fontSize: 9 }}>{k.label}</span><div className={`kpi-value ${k.color}`} style={{ fontSize: 20 }}>{k.val}</div></div>
+                  { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : ""}R$${Math.round(stats.totalPL)}`, color: stats.totalPL >= 0 ? "g" : "r", tip: "Profit & Loss. O seu resultado financeiro bruto em Reais." }].map(k => (
+                  <div key={k.label} className="card" style={{ padding: "16px" }}>
+                    <span className="kpi-label" style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: '4px' }}>{k.label} {k.tip && <InfoTooltip text={k.tip} />}</span>
+                    <div className={`kpi-value ${k.color}`} style={{ fontSize: 20 }}>{k.val}</div>
+                  </div>
                 ))}
               </div>
               
@@ -460,7 +485,10 @@ export default function BankrollVault() {
             {view === "kelly" && <div className="card" style={{ maxWidth: 700, margin: "0 auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                 <Calculator size={20} color="var(--primary)" />
-                <span className="section-title" style={{ marginBottom: 0 }}>CALCULADORA CRITÉRIO DE KELLY</span>
+                <span className="section-title" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  CALCULADORA CRITÉRIO DE KELLY
+                  <InfoTooltip text="O Critério de Kelly é a fórmula matemática de ouro das apostas. Ele calcula a porcentagem exata da sua banca que deve ser apostada com base na sua probabilidade para maximizar o lucro a longo prazo e reduzir a chance de quebra a zero." />
+                </span>
               </div>
               <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, lineHeight: 1.6 }}>Calcule o tamanho ideal (stake) para sua aposta com base na sua vantagem matemática estimada. Informe sua probabilidade real e a odd oferecida pela casa.</p>
               
