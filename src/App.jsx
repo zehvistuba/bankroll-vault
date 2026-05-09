@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Settings, Check, X } from "lucide-react";
 
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -20,8 +20,7 @@ const s = {
   header: { borderBottom: `1px solid ${BORDER}`, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
   logoLabel: { fontSize: 9, color: MUTED, letterSpacing: 3, textTransform: "uppercase", display: "block" },
   logoText: { fontSize: 22, fontWeight: 700, letterSpacing: -1, margin: 0 },
-  balanceLabel: { fontSize: 9, color: MUTED, textAlign: "right", display: "block" },
-  balanceValue: { fontSize: 20, fontWeight: 700, textAlign: "right" },
+  balanceLabel: { fontSize: 9, color: MUTED, textAlign: "right", display: "block", marginBottom: 2 },
   main: { flex: 1, padding: "20px", overflowY: "auto" },
   nav: { borderTop: `1px solid ${BORDER}`, display: "flex", background: BG, position: "sticky", bottom: 0 },
   navBtn: (active) => ({ flex: 1, background: "transparent", border: "none", padding: "10px 0 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: active ? G : MUTED }),
@@ -63,9 +62,7 @@ function buildSegments(bets, key) {
     if (bet.result === "pending") return;
     const k = bet[key] || "Outros";
     if (!map[k]) map[k] = { name: k, bets: 0, wins: 0, losses: 0, stake: 0, pl: 0 };
-    map[k].bets++;
-    map[k].stake += bet.stake;
-    map[k].pl += getBetPL(bet);
+    map[k].bets++; map[k].stake += bet.stake; map[k].pl += getBetPL(bet);
     if (bet.result === "win") map[k].wins++;
     if (bet.result === "loss") map[k].losses++;
   });
@@ -74,31 +71,24 @@ function buildSegments(bets, key) {
 
 function SegmentTable({ title, data }) {
   if (!data.length) return null;
-  const sorted = [...data].sort((a, b) => b.pl - a.pl);
   return (
     <div style={{ ...s.card, marginBottom: 16 }}>
       <span style={s.sectionTitle}>{title}</span>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-          <thead>
-            <tr>{["", "AP", "W", "L", "YIELD", "P&L"].map(h => (
-              <th key={h} style={{ fontSize: 8, color: MUTED, letterSpacing: 1, padding: "0 0 10px", textAlign: h === "" ? "left" : "right", fontWeight: 400 }}>{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody>
-            {sorted.map(row => (
-              <tr key={row.name} style={{ borderTop: `1px solid ${BORDER}` }}>
-                <td style={{ padding: "9px 8px 9px 0", color: TEXT, fontSize: 11, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</td>
-                <td style={{ padding: "9px 4px", textAlign: "right", color: MUTED }}>{row.bets}</td>
-                <td style={{ padding: "9px 4px", textAlign: "right", color: G }}>{row.wins}</td>
-                <td style={{ padding: "9px 4px", textAlign: "right", color: R }}>{row.losses}</td>
-                <td style={{ padding: "9px 4px", textAlign: "right", color: row.yield >= 0 ? G : R, fontWeight: 700 }}>{row.stake > 0 ? fmtPct(row.yield) : "—"}</td>
-                <td style={{ padding: "9px 0 9px 4px", textAlign: "right", color: row.pl >= 0 ? G : R, fontWeight: 700 }}>{`${row.pl >= 0 ? "+" : ""}R$${Math.round(row.pl)}`}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+        <thead><tr>{["", "AP", "W", "L", "YIELD", "P&L"].map(h => (
+          <th key={h} style={{ fontSize: 8, color: MUTED, letterSpacing: 1, padding: "0 0 10px", textAlign: h === "" ? "left" : "right", fontWeight: 400 }}>{h}</th>
+        ))}</tr></thead>
+        <tbody>{[...data].sort((a, b) => b.pl - a.pl).map(row => (
+          <tr key={row.name} style={{ borderTop: `1px solid ${BORDER}` }}>
+            <td style={{ padding: "9px 8px 9px 0", color: TEXT, fontSize: 11, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</td>
+            <td style={{ padding: "9px 4px", textAlign: "right", color: MUTED }}>{row.bets}</td>
+            <td style={{ padding: "9px 4px", textAlign: "right", color: G }}>{row.wins}</td>
+            <td style={{ padding: "9px 4px", textAlign: "right", color: R }}>{row.losses}</td>
+            <td style={{ padding: "9px 4px", textAlign: "right", color: row.yield >= 0 ? G : R, fontWeight: 700 }}>{row.stake > 0 ? fmtPct(row.yield) : "—"}</td>
+            <td style={{ padding: "9px 0 9px 4px", textAlign: "right", color: row.pl >= 0 ? G : R, fontWeight: 700 }}>{`${row.pl >= 0 ? "+" : ""}R$${Math.round(row.pl)}`}</td>
+          </tr>
+        ))}</tbody>
+      </table>
     </div>
   );
 }
@@ -128,141 +118,100 @@ function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets }) {
   const [insight, setInsight] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
   const settled = bets.filter(b => b.result !== "pending");
 
-  const generateInsight = async () => {
-    if (settled.length < 3) {
-      setError("Registre pelo menos 3 apostas liquidadas para gerar análise.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    setInsight("");
-
-    const recentBets = [...settled]
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 20)
-      .map(b => ({
-        data: b.date,
-        descricao: b.description,
-        esporte: b.sport,
-        mercado: b.market,
-        casa: b.bookmaker,
-        odds: b.odds,
-        oddsEncerramento: b.closingOdds || null,
-        stake: b.stake,
-        resultado: b.result,
-        pl: getBetPL(b),
-        clv: getCLV(b) !== null ? `${getCLV(b).toFixed(1)}%` : null,
-      }));
-
+  const generate = async () => {
+    if (settled.length < 3) { setError("Registre pelo menos 3 apostas liquidadas para gerar análise."); return; }
+    setLoading(true); setError(""); setInsight("");
     const payload = {
-      resumoGeral: {
-        totalApostas: stats.totalBets,
-        apostasLiquidadas: settled.length,
-        vitorias: stats.wins,
-        derrotas: stats.losses,
-        taxaAcerto: `${stats.winRate.toFixed(1)}%`,
-        roi: `${stats.roi.toFixed(2)}%`,
-        yield: `${stats.yield.toFixed(2)}%`,
-        clvMedio: stats.avgCLV != null ? `${stats.avgCLV.toFixed(2)}%` : "sem dados",
-        plTotal: `R$${stats.totalPL.toFixed(2)}`,
-        bankrollAtual: `R$${stats.currentBankroll.toFixed(2)}`,
-      },
-      performancePorMercado: marketSeg.map(m => ({ mercado: m.name, apostas: m.bets, yield: `${m.yield.toFixed(2)}%`, pl: `R$${m.pl.toFixed(2)}` })),
-      performancePorCasa: bookSeg.map(b => ({ casa: b.name, apostas: b.bets, yield: `${b.yield.toFixed(2)}%`, pl: `R$${b.pl.toFixed(2)}` })),
-      performancePorEsporte: sportSeg.map(s => ({ esporte: s.name, apostas: s.bets, yield: `${s.yield.toFixed(2)}%`, pl: `R$${s.pl.toFixed(2)}` })),
-      ultimasApostas: recentBets,
+      resumoGeral: { totalApostas: stats.totalBets, liquidadas: settled.length, vitorias: stats.wins, derrotas: stats.losses, taxaAcerto: `${stats.winRate.toFixed(1)}%`, roi: `${stats.roi.toFixed(2)}%`, yield: `${stats.yield.toFixed(2)}%`, clvMedio: stats.avgCLV != null ? `${stats.avgCLV.toFixed(2)}%` : "sem dados", pl: `R$${stats.totalPL.toFixed(2)}` },
+      porMercado: marketSeg.map(m => ({ mercado: m.name, apostas: m.bets, yield: `${m.yield.toFixed(2)}%`, pl: `R$${m.pl.toFixed(2)}` })),
+      porCasa: bookSeg.map(b => ({ casa: b.name, apostas: b.bets, yield: `${b.yield.toFixed(2)}%`, pl: `R$${b.pl.toFixed(2)}` })),
+      porEsporte: sportSeg.map(s => ({ esporte: s.name, apostas: s.bets, yield: `${s.yield.toFixed(2)}%`, pl: `R$${s.pl.toFixed(2)}` })),
+      ultimasApostas: [...settled].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).map(b => ({ data: b.date, desc: b.description, esporte: b.sport, mercado: b.market, casa: b.bookmaker, odds: b.odds, oddsClose: b.closingOdds || null, stake: b.stake, resultado: b.result, pl: getBetPL(b), clv: getCLV(b) !== null ? `${getCLV(b).toFixed(1)}%` : null })),
     };
-
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `Você é um analista especializado em apostas esportivas com foco em Expected Value (EV) e gestão de bankroll profissional. Analise os dados do apostador e gere um relatório de insights em português brasileiro.
-
-Estruture sua resposta em 4 partes curtas:
-1. DIAGNÓSTICO GERAL — avalie o desempenho global (ROI, yield, CLV)
-2. PONTOS FORTES — onde o apostador está gerando edge real
-3. VAZAMENTOS DE EV — onde está perdendo dinheiro desnecessariamente
-4. RECOMENDAÇÕES — 2 a 3 ações concretas e priorizadas
-
-Seja direto, técnico e específico. Use os dados reais. Não seja genérico. Máximo 400 palavras.`,
-          messages: [{
-            role: "user",
-            content: `Analise meu histórico de apostas e gere insights:\n\n${JSON.stringify(payload, null, 2)}`
-          }]
+          model: "claude-sonnet-4-20250514", max_tokens: 1000,
+          system: `Você é um analista especializado em apostas esportivas com foco em Expected Value (EV) e gestão de bankroll profissional. Analise os dados e gere insights em português brasileiro.\n\nEstruture em 4 partes curtas:\n1. DIAGNÓSTICO GERAL — avalie ROI, yield, CLV\n2. PONTOS FORTES — onde está gerando edge real\n3. VAZAMENTOS DE EV — onde está perdendo desnecessariamente\n4. RECOMENDAÇÕES — 2 a 3 ações concretas\n\nSeja direto, técnico e específico. Máximo 400 palavras.`,
+          messages: [{ role: "user", content: `Analise meu histórico:\n\n${JSON.stringify(payload, null, 2)}` }]
         })
       });
-
-      const data = await response.json();
+      const data = await res.json();
       const text = data.content?.find(c => c.type === "text")?.text || "";
-      if (!text) throw new Error("Resposta vazia");
+      if (!text) throw new Error();
       setInsight(text);
-    } catch (e) {
-      setError("Erro ao gerar análise. Tente novamente.");
-    } finally {
-      setLoading(false);
-    }
+    } catch { setError("Erro ao gerar análise. Tente novamente."); }
+    finally { setLoading(false); }
   };
 
   return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ ...s.card, borderColor: `${ACC}44`, marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: insight ? 16 : 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Sparkles size={14} color={ACC} />
-            <span style={{ fontSize: 9, color: ACC, letterSpacing: 2 }}>INSIGHTS COM IA</span>
-          </div>
-          <button
-            onClick={generateInsight}
-            disabled={loading}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: loading ? BORDER : ACC, color: loading ? MUTED : "#050508", border: "none", borderRadius: 4, padding: "7px 14px", fontSize: 10, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Space Mono', monospace" }}
-          >
-            {loading
-              ? <><RefreshCw size={11} style={{ animation: "spin 1s linear infinite" }} /> ANALISANDO...</>
-              : insight ? <><RefreshCw size={11} /> ATUALIZAR</> : "GERAR ANÁLISE"
-            }
-          </button>
+    <div style={{ ...s.card, borderColor: `${ACC}44`, marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: insight || error || loading ? 16 : 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={14} color={ACC} />
+          <span style={{ fontSize: 9, color: ACC, letterSpacing: 2 }}>INSIGHTS COM IA</span>
         </div>
-
-        {loading && (
-          <div style={{ marginTop: 16, padding: "20px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 11, color: MUTED, lineHeight: 2 }}>
-              Processando seus dados...<br />
-              <span style={{ fontSize: 9, color: `${MUTED}88` }}>Isso pode levar alguns segundos</span>
-            </div>
-          </div>
-        )}
-
-        {error && !loading && (
-          <div style={{ marginTop: 12, fontSize: 11, color: R, lineHeight: 1.6 }}>{error}</div>
-        )}
-
-        {insight && !loading && (
-          <div style={{ marginTop: 0, fontSize: 11, color: TEXT, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>
-            {insight.split("\n").map((line, i) => {
-              const isHeader = /^\d+\.|^[A-ZÁÉÍÓÚ]{2,}/.test(line.trim());
-              return (
-                <p key={i} style={{ margin: "0 0 6px", color: isHeader ? ACC : TEXT, fontWeight: isHeader ? 700 : 400, fontSize: isHeader ? 9 : 11, letterSpacing: isHeader ? 1 : 0 }}>
-                  {line}
-                </p>
-              );
-            })}
-          </div>
-        )}
-
-        {!insight && !loading && !error && (
-          <div style={{ marginTop: 12, fontSize: 10, color: MUTED, lineHeight: 1.7 }}>
-            Clique em "Gerar Análise" para receber um diagnóstico completo do seu histórico — padrões, vazamentos de EV e recomendações concretas.
-          </div>
-        )}
+        <button onClick={generate} disabled={loading} style={{ display: "flex", alignItems: "center", gap: 6, background: loading ? BORDER : ACC, color: loading ? MUTED : "#050508", border: "none", borderRadius: 4, padding: "7px 14px", fontSize: 10, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Space Mono', monospace" }}>
+          {loading ? <><RefreshCw size={11} style={{ animation: "spin 1s linear infinite" }} /> ANALISANDO...</> : insight ? <><RefreshCw size={11} /> ATUALIZAR</> : "GERAR ANÁLISE"}
+        </button>
       </div>
+      {loading && <div style={{ textAlign: "center", padding: "20px 0", fontSize: 11, color: MUTED, lineHeight: 2 }}>Processando seus dados...<br /><span style={{ fontSize: 9, color: `${MUTED}88` }}>Isso pode levar alguns segundos</span></div>}
+      {error && !loading && <div style={{ fontSize: 11, color: R, lineHeight: 1.6 }}>{error}</div>}
+      {insight && !loading && (
+        <div style={{ fontSize: 11, color: TEXT, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>
+          {insight.split("\n").map((line, i) => {
+            const isHeader = /^\d+\.|^[A-ZÁÉÍÓÚ]{2,}/.test(line.trim());
+            return <p key={i} style={{ margin: "0 0 6px", color: isHeader ? ACC : TEXT, fontWeight: isHeader ? 700 : 400, fontSize: isHeader ? 9 : 11, letterSpacing: isHeader ? 1 : 0 }}>{line}</p>;
+          })}
+        </div>
+      )}
+      {!insight && !loading && !error && <div style={{ fontSize: 10, color: MUTED, lineHeight: 1.7, marginTop: 12 }}>Clique em "Gerar Análise" para receber diagnóstico completo — padrões, vazamentos de EV e recomendações.</div>}
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+// ── Edição inline do bankroll no header ──
+function BalanceDisplay({ value, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef(null);
+
+  const startEdit = () => { setDraft(value.toString()); setEditing(true); setTimeout(() => inputRef.current?.select(), 50); };
+  const confirm = () => { const v = parseFloat(draft); if (!isNaN(v) && v >= 0) onChange(v); setEditing(false); };
+  const cancel = () => setEditing(false);
+  const onKey = (e) => { if (e.key === "Enter") confirm(); if (e.key === "Escape") cancel(); };
+
+  if (editing) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+      <span style={s.balanceLabel}>BANKROLL INICIAL</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 12, color: MUTED }}>R$</span>
+        <input
+          ref={inputRef}
+          type="number"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={onKey}
+          style={{ width: 100, background: "transparent", border: `1px solid ${G}`, borderRadius: 4, padding: "4px 8px", color: G, fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, outline: "none", textAlign: "right" }}
+        />
+        <button onClick={confirm} style={{ background: "transparent", border: "none", cursor: "pointer", color: G, padding: 2 }}><Check size={16} /></button>
+        <button onClick={cancel} style={{ background: "transparent", border: "none", cursor: "pointer", color: MUTED, padding: 2 }}><X size={16} /></button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", cursor: "pointer" }} onClick={startEdit} title="Toque para editar">
+      <span style={s.balanceLabel}>SALDO ATUAL</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 20, fontWeight: 700, color: G }}>{fmt(value)}</span>
+        <span style={{ fontSize: 9, color: MUTED, marginTop: 2 }}>✎</span>
+      </div>
     </div>
   );
 }
@@ -290,8 +239,7 @@ export default function BankrollVault() {
     let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
     const chartData = [{ d: "Início", v: config.initialBankroll }];
     sorted.forEach(bet => {
-      const pl = getBetPL(bet);
-      const clv = getCLV(bet);
+      const pl = getBetPL(bet); const clv = getCLV(bet);
       if (bet.result !== "pending") {
         totalStake += bet.stake; totalPL += pl; bankroll += pl;
         if (bet.result === "win") wins++;
@@ -308,8 +256,7 @@ export default function BankrollVault() {
   const sportSeg = useMemo(() => buildSegments(bets, "sport"), [bets]);
 
   const kellyResult = useMemo(() => {
-    const p = parseFloat(kellyForm.prob) / 100;
-    const b = parseFloat(kellyForm.odds) - 1;
+    const p = parseFloat(kellyForm.prob) / 100; const b = parseFloat(kellyForm.odds) - 1;
     const br = parseFloat(kellyForm.bankroll) || stats.currentBankroll;
     if (!p || !b || p <= 0 || p >= 1 || b <= 0) return null;
     const f = (b * p - (1 - p)) / b;
@@ -319,8 +266,7 @@ export default function BankrollVault() {
   const addBet = () => {
     if (!form.description || !form.odds || !form.stake) return;
     setBets(prev => [...prev, { ...form, id: Date.now(), odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake) }]);
-    setForm(defaultForm());
-    setView("dashboard");
+    setForm(defaultForm()); setView("dashboard");
   };
 
   const pending = bets.filter(b => b.result === "pending");
@@ -343,16 +289,23 @@ export default function BankrollVault() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap'); * { margin: 0; padding: 0; box-sizing: border-box; } body { background: ${BG}; }`}</style>
       <div style={s.app}>
 
+        {/* HEADER */}
         <header style={s.header}>
-          <div><span style={s.logoLabel}>Bankroll</span><h1 style={s.logoText}>VAULT</h1></div>
-          <div>
-            <span style={s.balanceLabel}>SALDO ATUAL</span>
-            <div style={{ ...s.balanceValue, color: stats.totalPL >= 0 ? G : R }}>{fmt(stats.currentBankroll)}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div>
+              <span style={s.logoLabel}>Bankroll</span>
+              <h1 style={s.logoText}>VAULT</h1>
+            </div>
           </div>
+          <BalanceDisplay
+            value={config.initialBankroll}
+            onChange={v => setConfig(p => ({ ...p, initialBankroll: v }))}
+          />
         </header>
 
         <main style={s.main}>
 
+          {/* DASHBOARD */}
           {view === "dashboard" && <>
             <div style={s.grid2}>
               {[{ label: "ROI", val: fmtPct(stats.roi), color: stats.roi >= 0 ? G : R }, { label: "YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? G : R }, { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, color: TEXT }, { label: "CLV MÉDIO", val: stats.avgCLV != null ? fmtPct(stats.avgCLV) : "—", color: stats.avgCLV != null ? (stats.avgCLV >= 0 ? G : R) : MUTED }].map(k => (
@@ -406,6 +359,7 @@ export default function BankrollVault() {
             )}
           </>}
 
+          {/* REGISTRAR */}
           {view === "register" && <>
             <span style={{ ...s.sectionTitle, marginBottom: 20 }}>NOVA APOSTA</span>
             {[{ label: "DATA", field: "date", type: "date" }, { label: "DESCRIÇÃO", field: "description", type: "text", ph: "ex: Palmeiras x Corinthians — Palmeiras" }, { label: "ODDS", field: "odds", type: "number", ph: "1.85", step: "0.01" }, { label: "ODDS DE FECHAMENTO — CLV (opcional)", field: "closingOdds", type: "number", ph: "1.75", step: "0.01" }, { label: "STAKE (R$)", field: "stake", type: "number", ph: "100", step: "any" }].map(f => (
@@ -415,18 +369,14 @@ export default function BankrollVault() {
               <div key={f.field} style={{ marginBottom: 14 }}><span style={s.formLabel}>{f.label}</span><select value={form[f.field]} onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))} style={s.select}>{f.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
             ))}
             <button style={s.btn()} onClick={addBet}>REGISTRAR APOSTA</button>
-            <div style={{ ...s.card, marginTop: 24 }}>
-              <span style={s.formLabel}>BANKROLL INICIAL (R$)</span>
-              <input type="number" value={config.initialBankroll} onChange={e => setConfig(p => ({ ...p, initialBankroll: parseFloat(e.target.value) || 0 }))} style={s.input} />
-            </div>
           </>}
 
+          {/* HISTÓRICO */}
           {view === "history" && <>
             <span style={{ ...s.sectionTitle, marginBottom: 20 }}>HISTÓRICO</span>
             {bets.length === 0 && <div style={{ ...s.emptyState, padding: "32px 0" }}>Nenhuma aposta registrada.</div>}
             {[...bets].sort((a, b) => b.date.localeCompare(a.date)).map(bet => {
-              const pl = getBetPL(bet);
-              const clv = getCLV(bet);
+              const pl = getBetPL(bet); const clv = getCLV(bet);
               const [rlabel, rcolor] = RESULT_MAP[bet.result] || ["?", MUTED];
               return (
                 <div key={bet.id} style={s.betCard}>
@@ -448,6 +398,7 @@ export default function BankrollVault() {
             })}
           </>}
 
+          {/* ANÁLISE */}
           {view === "analyze" && <>
             <span style={{ ...s.sectionTitle, marginBottom: 16 }}>ANÁLISE DE PERFORMANCE</span>
             {!hasSettled ? (
@@ -463,7 +414,6 @@ export default function BankrollVault() {
                   {tabBtn("bookmaker", "CASA")}
                   {tabBtn("sport", "ESPORTE")}
                 </div>
-
                 {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} />}
                 {analyzeTab === "market" && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="POR MERCADO" data={marketSeg} /></>}
                 {analyzeTab === "bookmaker" && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="POR CASA DE APOSTA" data={bookSeg} /></>}
@@ -472,6 +422,7 @@ export default function BankrollVault() {
             )}
           </>}
 
+          {/* KELLY */}
           {view === "kelly" && <>
             <span style={{ ...s.sectionTitle, marginBottom: 8 }}>CALCULADORA KELLY</span>
             <p style={{ fontSize: 11, color: MUTED, marginBottom: 24, lineHeight: 1.7 }}>Calcula o stake ótimo com base na sua vantagem estimada. Informe sua probabilidade real e a odd da casa.</p>
