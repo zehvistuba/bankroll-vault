@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2 } from "lucide-react";
 
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -24,8 +24,8 @@ const s = {
   balanceValue: { fontSize: 20, fontWeight: 700, textAlign: "right" },
   main: { flex: 1, padding: "20px", overflowY: "auto" },
   nav: { borderTop: `1px solid ${BORDER}`, display: "flex", background: BG, position: "sticky", bottom: 0 },
-  navBtn: (active) => ({ flex: 1, background: "transparent", border: "none", padding: "12px 0 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: active ? G : MUTED }),
-  navLabel: { fontSize: 8, letterSpacing: 1, fontFamily: "'Space Mono', monospace" },
+  navBtn: (active) => ({ flex: 1, background: "transparent", border: "none", padding: "10px 0 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: active ? G : MUTED }),
+  navLabel: { fontSize: 7, letterSpacing: 1, fontFamily: "'Space Mono', monospace" },
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 },
   grid4: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 16 },
   card: { background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "14px 16px" },
@@ -46,11 +46,7 @@ const s = {
   betStats: { display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" },
   betStat: (color) => ({ fontSize: 11, color: color || TEXT }),
   emptyState: { textAlign: "center", padding: "48px 20px", color: MUTED },
-  emptyIcon: { fontSize: 36, marginBottom: 12 },
-  emptyText: { fontSize: 12, marginBottom: 20 },
   kellyResult: (hasValue) => ({ background: CARD, border: `1px solid ${hasValue ? G : R}`, borderRadius: 8, padding: 20, marginTop: 24 }),
-  kellyAmount: { fontSize: 32, fontWeight: 700, color: G, marginBottom: 4 },
-  kellyPct: { fontSize: 12, color: MUTED },
   kellyWarning: { marginTop: 16, padding: 12, background: BG, borderRadius: 4, fontSize: 10, color: MUTED, lineHeight: 1.8 },
 };
 
@@ -58,18 +54,82 @@ const fmt = (v) => `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigi
 const fmtPct = (v) => `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
 const getBetPL = (bet) => bet.result === "win" ? bet.stake * (bet.odds - 1) : bet.result === "loss" ? -bet.stake : 0;
 const getCLV = (bet) => bet.closingOdds ? ((bet.odds - bet.closingOdds) / bet.closingOdds * 100) : null;
-
 const RESULT_MAP = { win: ["W", G], loss: ["L", R], void: ["V", MUTED], pending: ["?", ACC] };
+const defaultForm = () => ({ date: new Date().toISOString().split("T")[0], sport: "Futebol", market: "1x2", bookmaker: "Bet365", description: "", odds: "", closingOdds: "", stake: "", result: "pending", notes: "" });
 
-const defaultForm = () => ({
-  date: new Date().toISOString().split("T")[0],
-  sport: "Futebol", market: "1x2", bookmaker: "Bet365",
-  description: "", odds: "", closingOdds: "", stake: "", result: "pending", notes: ""
-});
+function buildSegments(bets, key) {
+  const map = {};
+  bets.forEach(bet => {
+    if (bet.result === "pending") return;
+    const k = bet[key] || "Outros";
+    if (!map[k]) map[k] = { name: k, bets: 0, wins: 0, losses: 0, stake: 0, pl: 0 };
+    map[k].bets++;
+    map[k].stake += bet.stake;
+    map[k].pl += getBetPL(bet);
+    if (bet.result === "win") map[k].wins++;
+    if (bet.result === "loss") map[k].losses++;
+  });
+  return Object.values(map).map(r => ({ ...r, yield: r.stake > 0 ? r.pl / r.stake * 100 : 0 }));
+}
+
+function SegmentTable({ title, data }) {
+  if (!data.length) return null;
+  const sorted = [...data].sort((a, b) => b.pl - a.pl);
+  return (
+    <div style={{ ...s.card, marginBottom: 16 }}>
+      <span style={s.sectionTitle}>{title}</span>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+          <thead>
+            <tr>
+              {["", "AP", "W", "L", "YIELD", "P&L"].map(h => (
+                <th key={h} style={{ fontSize: 8, color: MUTED, letterSpacing: 1, padding: "0 0 10px", textAlign: h === "" ? "left" : "right", fontWeight: 400 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(row => (
+              <tr key={row.name} style={{ borderTop: `1px solid ${BORDER}` }}>
+                <td style={{ padding: "9px 8px 9px 0", color: TEXT, fontSize: 11, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</td>
+                <td style={{ padding: "9px 4px", textAlign: "right", color: MUTED }}>{row.bets}</td>
+                <td style={{ padding: "9px 4px", textAlign: "right", color: G }}>{row.wins}</td>
+                <td style={{ padding: "9px 4px", textAlign: "right", color: R }}>{row.losses}</td>
+                <td style={{ padding: "9px 4px", textAlign: "right", color: row.yield >= 0 ? G : R, fontWeight: 700 }}>{row.stake > 0 ? fmtPct(row.yield) : "—"}</td>
+                <td style={{ padding: "9px 0 9px 4px", textAlign: "right", color: row.pl >= 0 ? G : R, fontWeight: 700 }}>{`${row.pl >= 0 ? "+" : ""}R$${Math.round(row.pl)}`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function HighlightCards({ data, bestLabel, worstLabel }) {
+  const valid = data.filter(m => m.stake > 0 && m.bets >= 2);
+  if (valid.length < 2) return null;
+  const best = [...valid].sort((a, b) => b.yield - a.yield)[0];
+  const worst = [...valid].sort((a, b) => a.yield - b.yield)[0];
+  return (
+    <div style={s.grid2}>
+      <div style={{ ...s.card, borderColor: `${G}44` }}>
+        <span style={{ fontSize: 8, color: G, letterSpacing: 2, display: "block", marginBottom: 6 }}>{bestLabel}</span>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{best.name}</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: G }}>{fmtPct(best.yield)}</div>
+      </div>
+      <div style={{ ...s.card, borderColor: `${R}44` }}>
+        <span style={{ fontSize: 8, color: R, letterSpacing: 2, display: "block", marginBottom: 6 }}>{worstLabel}</span>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{worst.name}</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: R }}>{fmtPct(worst.yield)}</div>
+      </div>
+    </div>
+  );
+}
 
 export default function BankrollVault() {
   const [view, setView] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
+  const [analyzeTab, setAnalyzeTab] = useState("market");
 
   const [bets, setBets] = useState(() => {
     try { const v = localStorage.getItem("vault_bets"); return v ? JSON.parse(v) : []; } catch { return []; }
@@ -77,7 +137,6 @@ export default function BankrollVault() {
   const [config, setConfig] = useState(() => {
     try { const v = localStorage.getItem("vault_cfg"); return v ? JSON.parse(v) : { initialBankroll: 1000 }; } catch { return { initialBankroll: 1000 }; }
   });
-
   const [form, setForm] = useState(defaultForm());
   const [kellyForm, setKellyForm] = useState({ prob: "", odds: "", bankroll: "" });
 
@@ -100,15 +159,12 @@ export default function BankrollVault() {
       }
       if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
     });
-    return {
-      currentBankroll: bankroll, totalPL,
-      roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0,
-      yield: totalStake > 0 ? totalPL / totalStake * 100 : 0,
-      winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0,
-      avgCLV: clvCount > 0 ? clvSum / clvCount : null,
-      wins, losses, totalBets: bets.length, chartData
-    };
+    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: bets.length, chartData };
   }, [bets, config.initialBankroll]);
+
+  const marketSeg = useMemo(() => buildSegments(bets, "market"), [bets]);
+  const bookSeg = useMemo(() => buildSegments(bets, "bookmaker"), [bets]);
+  const sportSeg = useMemo(() => buildSegments(bets, "sport"), [bets]);
 
   const kellyResult = useMemo(() => {
     const p = parseFloat(kellyForm.prob) / 100;
@@ -127,13 +183,19 @@ export default function BankrollVault() {
   };
 
   const pending = bets.filter(b => b.result === "pending");
+  const hasSettled = bets.some(b => b.result !== "pending");
 
   const NAV = [
     { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { id: "register", icon: Plus, label: "Registrar" },
     { id: "history", icon: List, label: "Histórico" },
+    { id: "analyze", icon: BarChart2, label: "Análise" },
     { id: "kelly", icon: Calculator, label: "Kelly" },
   ];
+
+  const tabBtn = (id, label) => (
+    <button key={id} onClick={() => setAnalyzeTab(id)} style={{ flex: 1, background: analyzeTab === id ? G : "transparent", color: analyzeTab === id ? "#050508" : MUTED, border: `1px solid ${analyzeTab === id ? G : BORDER}`, borderRadius: 4, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: "'Space Mono', monospace", fontWeight: analyzeTab === id ? 700 : 400 }}>{label}</button>
+  );
 
   return (
     <>
@@ -153,204 +215,145 @@ export default function BankrollVault() {
 
         <main style={s.main}>
 
-          {view === "dashboard" && (
-            <>
-              <div style={s.grid2}>
-                {[
-                  { label: "ROI", val: fmtPct(stats.roi), color: stats.roi >= 0 ? G : R },
-                  { label: "YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? G : R },
-                  { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, color: TEXT },
-                  { label: "CLV MÉDIO", val: stats.avgCLV != null ? fmtPct(stats.avgCLV) : "—", color: stats.avgCLV != null ? (stats.avgCLV >= 0 ? G : R) : MUTED },
-                ].map(k => (
-                  <div key={k.label} style={s.card}>
-                    <span style={s.kpiLabel}>{k.label}</span>
-                    <div style={s.kpiValue(k.color)}>{k.val}</div>
+          {view === "dashboard" && <>
+            <div style={s.grid2}>
+              {[{ label: "ROI", val: fmtPct(stats.roi), color: stats.roi >= 0 ? G : R }, { label: "YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? G : R }, { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, color: TEXT }, { label: "CLV MÉDIO", val: stats.avgCLV != null ? fmtPct(stats.avgCLV) : "—", color: stats.avgCLV != null ? (stats.avgCLV >= 0 ? G : R) : MUTED }].map(k => (
+                <div key={k.label} style={s.card}><span style={s.kpiLabel}>{k.label}</span><div style={s.kpiValue(k.color)}>{k.val}</div></div>
+              ))}
+            </div>
+            <div style={s.grid4}>
+              {[{ label: "APOSTAS", val: stats.totalBets, color: TEXT }, { label: "VITÓRIAS", val: stats.wins, color: G }, { label: "DERROTAS", val: stats.losses, color: R }, { label: "P&L", val: `${stats.totalPL >= 0 ? "+" : ""}R$${Math.round(stats.totalPL)}`, color: stats.totalPL >= 0 ? G : R }].map(k => (
+                <div key={k.label} style={{ ...s.card, padding: "10px 8px" }}><span style={s.miniLabel}>{k.label}</span><div style={s.miniValue(k.color)}>{k.val}</div></div>
+              ))}
+            </div>
+            {stats.chartData.length > 2 && (
+              <div style={{ ...s.card, marginBottom: 16 }}>
+                <span style={s.sectionTitle}>EVOLUÇÃO DO BANKROLL</span>
+                <ResponsiveContainer width="100%" height={150}>
+                  <LineChart data={stats.chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={BORDER} />
+                    <XAxis dataKey="d" tick={{ fill: MUTED, fontSize: 9, fontFamily: "Space Mono" }} />
+                    <YAxis tick={{ fill: MUTED, fontSize: 9, fontFamily: "Space Mono" }} width={52} tickFormatter={v => `R$${v}`} />
+                    <ReferenceLine y={config.initialBankroll} stroke={BORDER} strokeDasharray="4 4" />
+                    <Tooltip contentStyle={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, fontFamily: "Space Mono" }} formatter={v => [fmt(v), "Bankroll"]} labelStyle={{ color: MUTED }} />
+                    <Line type="monotone" dataKey="v" stroke={stats.totalPL >= 0 ? G : R} strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {pending.length > 0 && (
+              <div style={s.card}>
+                <span style={s.sectionTitle}>APOSTAS PENDENTES</span>
+                {pending.map((bet, i) => (
+                  <div key={bet.id} style={{ borderBottom: i < pending.length - 1 ? `1px solid ${BORDER}` : "none", paddingBottom: i < pending.length - 1 ? 14 : 0, marginBottom: i < pending.length - 1 ? 14 : 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <div><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{bet.description}</div><div style={s.betMeta}>{bet.sport} · {bet.market} · {bet.bookmaker}</div></div>
+                      <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 700, color: ACC }}>@{bet.odds.toFixed(2)}</div><div style={{ fontSize: 10, color: MUTED }}>{fmt(bet.stake)}</div></div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button style={s.outlineBtn(G)} onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "win" } : b))}>GANHOU</button>
+                      <button style={s.outlineBtn(R)} onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "loss" } : b))}>PERDEU</button>
+                      <button style={s.outlineBtn(MUTED)} onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "void" } : b))}>VOID</button>
+                    </div>
                   </div>
                 ))}
               </div>
-
-              <div style={s.grid4}>
-                {[
-                  { label: "APOSTAS", val: stats.totalBets, color: TEXT },
-                  { label: "VITÓRIAS", val: stats.wins, color: G },
-                  { label: "DERROTAS", val: stats.losses, color: R },
-                  { label: "P&L", val: `${stats.totalPL >= 0 ? "+" : ""}R$${Math.round(stats.totalPL)}`, color: stats.totalPL >= 0 ? G : R },
-                ].map(k => (
-                  <div key={k.label} style={{ ...s.card, padding: "10px 8px" }}>
-                    <span style={s.miniLabel}>{k.label}</span>
-                    <div style={s.miniValue(k.color)}>{k.val}</div>
-                  </div>
-                ))}
+            )}
+            {bets.length === 0 && (
+              <div style={s.emptyState}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>◈</div>
+                <div style={{ fontSize: 12, marginBottom: 20 }}>Nenhuma aposta registrada ainda.</div>
+                <button style={{ ...s.btn(), width: "auto", padding: "10px 24px" }} onClick={() => setView("register")}>REGISTRAR PRIMEIRA APOSTA</button>
               </div>
+            )}
+          </>}
 
-              {stats.chartData.length > 2 && (
-                <div style={{ ...s.card, marginBottom: 16 }}>
-                  <span style={s.sectionTitle}>EVOLUÇÃO DO BANKROLL</span>
-                  <ResponsiveContainer width="100%" height={150}>
-                    <LineChart data={stats.chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={BORDER} />
-                      <XAxis dataKey="d" tick={{ fill: MUTED, fontSize: 9, fontFamily: "Space Mono" }} />
-                      <YAxis tick={{ fill: MUTED, fontSize: 9, fontFamily: "Space Mono" }} width={52} tickFormatter={v => `R$${v}`} />
-                      <ReferenceLine y={config.initialBankroll} stroke={BORDER} strokeDasharray="4 4" />
-                      <Tooltip contentStyle={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, fontFamily: "Space Mono" }} formatter={v => [fmt(v), "Bankroll"]} labelStyle={{ color: MUTED }} />
-                      <Line type="monotone" dataKey="v" stroke={stats.totalPL >= 0 ? G : R} strokeWidth={2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+          {view === "register" && <>
+            <span style={{ ...s.sectionTitle, marginBottom: 20 }}>NOVA APOSTA</span>
+            {[{ label: "DATA", field: "date", type: "date" }, { label: "DESCRIÇÃO", field: "description", type: "text", ph: "ex: Palmeiras x Corinthians — Palmeiras" }, { label: "ODDS", field: "odds", type: "number", ph: "1.85", step: "0.01" }, { label: "ODDS DE FECHAMENTO — CLV (opcional)", field: "closingOdds", type: "number", ph: "1.75", step: "0.01" }, { label: "STAKE (R$)", field: "stake", type: "number", ph: "100", step: "any" }].map(f => (
+              <div key={f.field} style={{ marginBottom: 14 }}><span style={s.formLabel}>{f.label}</span><input type={f.type} placeholder={f.ph} step={f.step} value={form[f.field]} onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))} style={s.input} /></div>
+            ))}
+            {[{ label: "ESPORTE", field: "sport", opts: SPORTS.map(o => [o, o]) }, { label: "MERCADO", field: "market", opts: MARKETS.map(o => [o, o]) }, { label: "CASA DE APOSTA", field: "bookmaker", opts: BOOKMAKERS.map(o => [o, o]) }, { label: "RESULTADO", field: "result", opts: [["pending","Pendente"],["win","Ganhou"],["loss","Perdeu"],["void","Void"]] }].map(f => (
+              <div key={f.field} style={{ marginBottom: 14 }}><span style={s.formLabel}>{f.label}</span><select value={form[f.field]} onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))} style={s.select}>{f.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+            ))}
+            <button style={s.btn()} onClick={addBet}>REGISTRAR APOSTA</button>
+            <div style={{ ...s.card, marginTop: 24 }}>
+              <span style={s.formLabel}>BANKROLL INICIAL (R$)</span>
+              <input type="number" value={config.initialBankroll} onChange={e => setConfig(p => ({ ...p, initialBankroll: parseFloat(e.target.value) || 0 }))} style={s.input} />
+            </div>
+          </>}
 
-              {pending.length > 0 && (
-                <div style={s.card}>
-                  <span style={s.sectionTitle}>APOSTAS PENDENTES</span>
-                  {pending.map((bet, i) => (
-                    <div key={bet.id} style={{ borderBottom: i < pending.length - 1 ? `1px solid ${BORDER}` : "none", paddingBottom: i < pending.length - 1 ? 14 : 0, marginBottom: i < pending.length - 1 ? 14 : 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{bet.description}</div>
-                          <div style={s.betMeta}>{bet.sport} · {bet.market} · {bet.bookmaker}</div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: ACC }}>@{bet.odds.toFixed(2)}</div>
-                          <div style={{ fontSize: 10, color: MUTED }}>{fmt(bet.stake)}</div>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button style={s.outlineBtn(G)} onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "win" } : b))}>GANHOU</button>
-                        <button style={s.outlineBtn(R)} onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "loss" } : b))}>PERDEU</button>
-                        <button style={s.outlineBtn(MUTED)} onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "void" } : b))}>VOID</button>
+          {view === "history" && <>
+            <span style={{ ...s.sectionTitle, marginBottom: 20 }}>HISTÓRICO</span>
+            {bets.length === 0 && <div style={{ ...s.emptyState, padding: "32px 0" }}>Nenhuma aposta registrada.</div>}
+            {[...bets].sort((a, b) => b.date.localeCompare(a.date)).map(bet => {
+              const pl = getBetPL(bet);
+              const clv = getCLV(bet);
+              const [rlabel, rcolor] = RESULT_MAP[bet.result] || ["?", MUTED];
+              return (
+                <div key={bet.id} style={s.betCard}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ marginBottom: 4 }}><span style={s.badge(rcolor)}>{rlabel}</span><span style={s.betName}>{bet.description}</span></div>
+                      <div style={s.betMeta}>{bet.date} · {bet.sport} · {bet.market} · {bet.bookmaker}</div>
+                      <div style={s.betStats}>
+                        <span style={s.betStat(ACC)}>@{bet.odds.toFixed(2)}</span>
+                        <span style={s.betStat(MUTED)}>{fmt(bet.stake)}</span>
+                        {bet.result !== "pending" && <span style={s.betStat(pl >= 0 ? G : R)}>P&L: {pl >= 0 ? "+" : ""}R${pl.toFixed(2)}</span>}
+                        {clv != null && <span style={s.betStat(clv >= 0 ? G : R)}>CLV: {clv >= 0 ? "+" : ""}{clv.toFixed(1)}%</span>}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {bets.length === 0 && (
-                <div style={s.emptyState}>
-                  <div style={s.emptyIcon}>◈</div>
-                  <div style={s.emptyText}>Nenhuma aposta registrada ainda.</div>
-                  <button style={{ ...s.btn(), width: "auto", padding: "10px 24px" }} onClick={() => setView("register")}>REGISTRAR PRIMEIRA APOSTA</button>
-                </div>
-              )}
-            </>
-          )}
-
-          {view === "register" && (
-            <>
-              <span style={{ ...s.sectionTitle, marginBottom: 20 }}>NOVA APOSTA</span>
-              {[
-                { label: "DATA", field: "date", type: "date" },
-                { label: "DESCRIÇÃO", field: "description", type: "text", ph: "ex: Palmeiras x Corinthians — Palmeiras" },
-                { label: "ODDS", field: "odds", type: "number", ph: "1.85", step: "0.01" },
-                { label: "ODDS DE FECHAMENTO — CLV (opcional)", field: "closingOdds", type: "number", ph: "1.75", step: "0.01" },
-                { label: "STAKE (R$)", field: "stake", type: "number", ph: "100", step: "any" },
-              ].map(f => (
-                <div key={f.field} style={{ marginBottom: 14 }}>
-                  <span style={s.formLabel}>{f.label}</span>
-                  <input type={f.type} placeholder={f.ph} step={f.step} value={form[f.field]}
-                    onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))} style={s.input} />
-                </div>
-              ))}
-              {[
-                { label: "ESPORTE", field: "sport", opts: SPORTS.map(o => [o, o]) },
-                { label: "MERCADO", field: "market", opts: MARKETS.map(o => [o, o]) },
-                { label: "CASA DE APOSTA", field: "bookmaker", opts: BOOKMAKERS.map(o => [o, o]) },
-                { label: "RESULTADO", field: "result", opts: [["pending","Pendente"],["win","Ganhou"],["loss","Perdeu"],["void","Void"]] },
-              ].map(f => (
-                <div key={f.field} style={{ marginBottom: 14 }}>
-                  <span style={s.formLabel}>{f.label}</span>
-                  <select value={form[f.field]} onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))} style={s.select}>
-                    {f.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </div>
-              ))}
-              <button style={s.btn()} onClick={addBet}>REGISTRAR APOSTA</button>
-              <div style={{ ...s.card, marginTop: 24 }}>
-                <span style={s.formLabel}>BANKROLL INICIAL (R$)</span>
-                <input type="number" value={config.initialBankroll}
-                  onChange={e => setConfig(p => ({ ...p, initialBankroll: parseFloat(e.target.value) || 0 }))} style={s.input} />
-              </div>
-            </>
-          )}
-
-          {view === "history" && (
-            <>
-              <span style={{ ...s.sectionTitle, marginBottom: 20 }}>HISTÓRICO</span>
-              {bets.length === 0 && <div style={{ ...s.emptyState, padding: "32px 0" }}>Nenhuma aposta registrada.</div>}
-              {[...bets].sort((a, b) => b.date.localeCompare(a.date)).map(bet => {
-                const pl = getBetPL(bet);
-                const clv = getCLV(bet);
-                const [rlabel, rcolor] = RESULT_MAP[bet.result] || ["?", MUTED];
-                return (
-                  <div key={bet.id} style={s.betCard}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ marginBottom: 4 }}>
-                          <span style={s.badge(rcolor)}>{rlabel}</span>
-                          <span style={s.betName}>{bet.description}</span>
-                        </div>
-                        <div style={s.betMeta}>{bet.date} · {bet.sport} · {bet.market} · {bet.bookmaker}</div>
-                        <div style={s.betStats}>
-                          <span style={s.betStat(ACC)}>@{bet.odds.toFixed(2)}</span>
-                          <span style={s.betStat(MUTED)}>{fmt(bet.stake)}</span>
-                          {bet.result !== "pending" && <span style={s.betStat(pl >= 0 ? G : R)}>P&L: {pl >= 0 ? "+" : ""}R${pl.toFixed(2)}</span>}
-                          {clv != null && <span style={s.betStat(clv >= 0 ? G : R)}>CLV: {clv >= 0 ? "+" : ""}{clv.toFixed(1)}%</span>}
-                        </div>
-                      </div>
-                      <button onClick={() => setBets(p => p.filter(b => b.id !== bet.id))}
-                        style={{ background: "transparent", border: "none", color: MUTED, cursor: "pointer", padding: 4, fontSize: 16 }}>✕</button>
-                    </div>
+                    <button onClick={() => setBets(p => p.filter(b => b.id !== bet.id))} style={{ background: "transparent", border: "none", color: MUTED, cursor: "pointer", padding: 4, fontSize: 16 }}>✕</button>
                   </div>
-                );
-              })}
-            </>
-          )}
+                </div>
+              );
+            })}
+          </>}
 
-          {view === "kelly" && (
-            <>
-              <span style={{ ...s.sectionTitle, marginBottom: 8 }}>CALCULADORA KELLY</span>
-              <p style={{ fontSize: 11, color: MUTED, marginBottom: 24, lineHeight: 1.7 }}>
-                Calcula o stake ótimo com base na sua vantagem estimada. Informe sua probabilidade real e a odd da casa.
-              </p>
-              {[
-                { label: "SUA PROBABILIDADE ESTIMADA (%)", field: "prob", ph: "55" },
-                { label: "ODDS DA CASA", field: "odds", ph: "1.85" },
-                { label: "BANKROLL (R$) — vazio = usa saldo atual", field: "bankroll", ph: stats.currentBankroll.toFixed(2) },
-              ].map(f => (
-                <div key={f.field} style={{ marginBottom: 16 }}>
-                  <span style={s.formLabel}>{f.label}</span>
-                  <input type="number" placeholder={f.ph} value={kellyForm[f.field]}
-                    onChange={e => setKellyForm(p => ({ ...p, [f.field]: e.target.value }))} style={s.input} />
+          {view === "analyze" && <>
+            <span style={{ ...s.sectionTitle, marginBottom: 16 }}>ANÁLISE DE PERFORMANCE</span>
+            {!hasSettled ? (
+              <div style={{ ...s.emptyState, padding: "32px 0" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>◈</div>
+                <div style={{ fontSize: 12 }}>Registre apostas liquidadas para ver a análise.</div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+                  {tabBtn("market", "MERCADO")}
+                  {tabBtn("bookmaker", "CASA")}
+                  {tabBtn("sport", "ESPORTE")}
                 </div>
-              ))}
-              {kellyResult && (
-                <div style={s.kellyResult(kellyResult.hasValue)}>
-                  {kellyResult.hasValue ? (
-                    <>
-                      <span style={s.kpiLabel}>STAKE RECOMENDADO</span>
-                      <div style={s.kellyAmount}>{fmt(kellyResult.amount)}</div>
-                      <div style={s.kellyPct}>{kellyResult.fraction.toFixed(2)}% do bankroll</div>
-                      <div style={s.kellyWarning}>
-                        ⚠ Kelly completo é agressivo. Considere ½ Kelly ({fmt(kellyResult.amount / 2)}) para maior proteção do bankroll em cenários de incerteza sobre o edge real.
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span style={{ ...s.kpiLabel, color: R }}>SEM VALOR</span>
-                      <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>Essa aposta não tem EV positivo com esses parâmetros. Kelly recomenda não apostar.</div>
-                    </>
-                  )}
-                </div>
-              )}
-            </>
-          )}
+                {analyzeTab === "market" && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="POR MERCADO" data={marketSeg} /></>}
+                {analyzeTab === "bookmaker" && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="POR CASA DE APOSTA" data={bookSeg} /></>}
+                {analyzeTab === "sport" && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="POR ESPORTE" data={sportSeg} /></>}
+              </>
+            )}
+          </>}
+
+          {view === "kelly" && <>
+            <span style={{ ...s.sectionTitle, marginBottom: 8 }}>CALCULADORA KELLY</span>
+            <p style={{ fontSize: 11, color: MUTED, marginBottom: 24, lineHeight: 1.7 }}>Calcula o stake ótimo com base na sua vantagem estimada. Informe sua probabilidade real e a odd da casa.</p>
+            {[{ label: "SUA PROBABILIDADE ESTIMADA (%)", field: "prob", ph: "55" }, { label: "ODDS DA CASA", field: "odds", ph: "1.85" }, { label: "BANKROLL (R$) — vazio = usa saldo atual", field: "bankroll", ph: stats.currentBankroll.toFixed(2) }].map(f => (
+              <div key={f.field} style={{ marginBottom: 16 }}><span style={s.formLabel}>{f.label}</span><input type="number" placeholder={f.ph} value={kellyForm[f.field]} onChange={e => setKellyForm(p => ({ ...p, [f.field]: e.target.value }))} style={s.input} /></div>
+            ))}
+            {kellyResult && (
+              <div style={s.kellyResult(kellyResult.hasValue)}>
+                {kellyResult.hasValue ? (
+                  <><span style={s.kpiLabel}>STAKE RECOMENDADO</span><div style={{ fontSize: 32, fontWeight: 700, color: G, marginBottom: 4 }}>{fmt(kellyResult.amount)}</div><div style={{ fontSize: 12, color: MUTED }}>{kellyResult.fraction.toFixed(2)}% do bankroll</div><div style={s.kellyWarning}>⚠ Kelly completo é agressivo. Considere ½ Kelly ({fmt(kellyResult.amount / 2)}) para maior proteção do bankroll.</div></>
+                ) : (
+                  <><span style={{ ...s.kpiLabel, color: R }}>SEM VALOR</span><div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>Essa aposta não tem EV positivo. Kelly recomenda não apostar.</div></>
+                )}
+              </div>
+            )}
+          </>}
 
         </main>
 
         <nav style={s.nav}>
           {NAV.map(({ id, icon: Icon, label }) => (
             <button key={id} style={s.navBtn(view === id)} onClick={() => setView(id)}>
-              <Icon size={19} />
-              <span style={s.navLabel}>{label}</span>
+              <Icon size={17} /><span style={s.navLabel}>{label}</span>
             </button>
           ))}
         </nav>
