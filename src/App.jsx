@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2 } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw } from "lucide-react";
 
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -81,11 +81,9 @@ function SegmentTable({ title, data }) {
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
-            <tr>
-              {["", "AP", "W", "L", "YIELD", "P&L"].map(h => (
-                <th key={h} style={{ fontSize: 8, color: MUTED, letterSpacing: 1, padding: "0 0 10px", textAlign: h === "" ? "left" : "right", fontWeight: 400 }}>{h}</th>
-              ))}
-            </tr>
+            <tr>{["", "AP", "W", "L", "YIELD", "P&L"].map(h => (
+              <th key={h} style={{ fontSize: 8, color: MUTED, letterSpacing: 1, padding: "0 0 10px", textAlign: h === "" ? "left" : "right", fontWeight: 400 }}>{h}</th>
+            ))}</tr>
           </thead>
           <tbody>
             {sorted.map(row => (
@@ -126,10 +124,153 @@ function HighlightCards({ data, bestLabel, worstLabel }) {
   );
 }
 
+function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets }) {
+  const [insight, setInsight] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const settled = bets.filter(b => b.result !== "pending");
+
+  const generateInsight = async () => {
+    if (settled.length < 3) {
+      setError("Registre pelo menos 3 apostas liquidadas para gerar análise.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setInsight("");
+
+    const recentBets = [...settled]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 20)
+      .map(b => ({
+        data: b.date,
+        descricao: b.description,
+        esporte: b.sport,
+        mercado: b.market,
+        casa: b.bookmaker,
+        odds: b.odds,
+        oddsEncerramento: b.closingOdds || null,
+        stake: b.stake,
+        resultado: b.result,
+        pl: getBetPL(b),
+        clv: getCLV(b) !== null ? `${getCLV(b).toFixed(1)}%` : null,
+      }));
+
+    const payload = {
+      resumoGeral: {
+        totalApostas: stats.totalBets,
+        apostasLiquidadas: settled.length,
+        vitorias: stats.wins,
+        derrotas: stats.losses,
+        taxaAcerto: `${stats.winRate.toFixed(1)}%`,
+        roi: `${stats.roi.toFixed(2)}%`,
+        yield: `${stats.yield.toFixed(2)}%`,
+        clvMedio: stats.avgCLV != null ? `${stats.avgCLV.toFixed(2)}%` : "sem dados",
+        plTotal: `R$${stats.totalPL.toFixed(2)}`,
+        bankrollAtual: `R$${stats.currentBankroll.toFixed(2)}`,
+      },
+      performancePorMercado: marketSeg.map(m => ({ mercado: m.name, apostas: m.bets, yield: `${m.yield.toFixed(2)}%`, pl: `R$${m.pl.toFixed(2)}` })),
+      performancePorCasa: bookSeg.map(b => ({ casa: b.name, apostas: b.bets, yield: `${b.yield.toFixed(2)}%`, pl: `R$${b.pl.toFixed(2)}` })),
+      performancePorEsporte: sportSeg.map(s => ({ esporte: s.name, apostas: s.bets, yield: `${s.yield.toFixed(2)}%`, pl: `R$${s.pl.toFixed(2)}` })),
+      ultimasApostas: recentBets,
+    };
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: `Você é um analista especializado em apostas esportivas com foco em Expected Value (EV) e gestão de bankroll profissional. Analise os dados do apostador e gere um relatório de insights em português brasileiro.
+
+Estruture sua resposta em 4 partes curtas:
+1. DIAGNÓSTICO GERAL — avalie o desempenho global (ROI, yield, CLV)
+2. PONTOS FORTES — onde o apostador está gerando edge real
+3. VAZAMENTOS DE EV — onde está perdendo dinheiro desnecessariamente
+4. RECOMENDAÇÕES — 2 a 3 ações concretas e priorizadas
+
+Seja direto, técnico e específico. Use os dados reais. Não seja genérico. Máximo 400 palavras.`,
+          messages: [{
+            role: "user",
+            content: `Analise meu histórico de apostas e gere insights:\n\n${JSON.stringify(payload, null, 2)}`
+          }]
+        })
+      });
+
+      const data = await response.json();
+      const text = data.content?.find(c => c.type === "text")?.text || "";
+      if (!text) throw new Error("Resposta vazia");
+      setInsight(text);
+    } catch (e) {
+      setError("Erro ao gerar análise. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ ...s.card, borderColor: `${ACC}44`, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: insight ? 16 : 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Sparkles size={14} color={ACC} />
+            <span style={{ fontSize: 9, color: ACC, letterSpacing: 2 }}>INSIGHTS COM IA</span>
+          </div>
+          <button
+            onClick={generateInsight}
+            disabled={loading}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: loading ? BORDER : ACC, color: loading ? MUTED : "#050508", border: "none", borderRadius: 4, padding: "7px 14px", fontSize: 10, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Space Mono', monospace" }}
+          >
+            {loading
+              ? <><RefreshCw size={11} style={{ animation: "spin 1s linear infinite" }} /> ANALISANDO...</>
+              : insight ? <><RefreshCw size={11} /> ATUALIZAR</> : "GERAR ANÁLISE"
+            }
+          </button>
+        </div>
+
+        {loading && (
+          <div style={{ marginTop: 16, padding: "20px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: MUTED, lineHeight: 2 }}>
+              Processando seus dados...<br />
+              <span style={{ fontSize: 9, color: `${MUTED}88` }}>Isso pode levar alguns segundos</span>
+            </div>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div style={{ marginTop: 12, fontSize: 11, color: R, lineHeight: 1.6 }}>{error}</div>
+        )}
+
+        {insight && !loading && (
+          <div style={{ marginTop: 0, fontSize: 11, color: TEXT, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>
+            {insight.split("\n").map((line, i) => {
+              const isHeader = /^\d+\.|^[A-ZÁÉÍÓÚ]{2,}/.test(line.trim());
+              return (
+                <p key={i} style={{ margin: "0 0 6px", color: isHeader ? ACC : TEXT, fontWeight: isHeader ? 700 : 400, fontSize: isHeader ? 9 : 11, letterSpacing: isHeader ? 1 : 0 }}>
+                  {line}
+                </p>
+              );
+            })}
+          </div>
+        )}
+
+        {!insight && !loading && !error && (
+          <div style={{ marginTop: 12, fontSize: 10, color: MUTED, lineHeight: 1.7 }}>
+            Clique em "Gerar Análise" para receber um diagnóstico completo do seu histórico — padrões, vazamentos de EV e recomendações concretas.
+          </div>
+        )}
+      </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 export default function BankrollVault() {
   const [view, setView] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
-  const [analyzeTab, setAnalyzeTab] = useState("market");
+  const [analyzeTab, setAnalyzeTab] = useState("ia");
 
   const [bets, setBets] = useState(() => {
     try { const v = localStorage.getItem("vault_bets"); return v ? JSON.parse(v) : []; } catch { return []; }
@@ -203,10 +344,7 @@ export default function BankrollVault() {
       <div style={s.app}>
 
         <header style={s.header}>
-          <div>
-            <span style={s.logoLabel}>Bankroll</span>
-            <h1 style={s.logoText}>VAULT</h1>
-          </div>
+          <div><span style={s.logoLabel}>Bankroll</span><h1 style={s.logoText}>VAULT</h1></div>
           <div>
             <span style={s.balanceLabel}>SALDO ATUAL</span>
             <div style={{ ...s.balanceValue, color: stats.totalPL >= 0 ? G : R }}>{fmt(stats.currentBankroll)}</div>
@@ -320,10 +458,13 @@ export default function BankrollVault() {
             ) : (
               <>
                 <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+                  {tabBtn("ia", "IA")}
                   {tabBtn("market", "MERCADO")}
                   {tabBtn("bookmaker", "CASA")}
                   {tabBtn("sport", "ESPORTE")}
                 </div>
+
+                {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} />}
                 {analyzeTab === "market" && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="POR MERCADO" data={marketSeg} /></>}
                 {analyzeTab === "bookmaker" && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="POR CASA DE APOSTA" data={bookSeg} /></>}
                 {analyzeTab === "sport" && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="POR ESPORTE" data={sportSeg} /></>}
@@ -339,11 +480,10 @@ export default function BankrollVault() {
             ))}
             {kellyResult && (
               <div style={s.kellyResult(kellyResult.hasValue)}>
-                {kellyResult.hasValue ? (
-                  <><span style={s.kpiLabel}>STAKE RECOMENDADO</span><div style={{ fontSize: 32, fontWeight: 700, color: G, marginBottom: 4 }}>{fmt(kellyResult.amount)}</div><div style={{ fontSize: 12, color: MUTED }}>{kellyResult.fraction.toFixed(2)}% do bankroll</div><div style={s.kellyWarning}>⚠ Kelly completo é agressivo. Considere ½ Kelly ({fmt(kellyResult.amount / 2)}) para maior proteção do bankroll.</div></>
-                ) : (
-                  <><span style={{ ...s.kpiLabel, color: R }}>SEM VALOR</span><div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>Essa aposta não tem EV positivo. Kelly recomenda não apostar.</div></>
-                )}
+                {kellyResult.hasValue
+                  ? <><span style={s.kpiLabel}>STAKE RECOMENDADO</span><div style={{ fontSize: 32, fontWeight: 700, color: G, marginBottom: 4 }}>{fmt(kellyResult.amount)}</div><div style={{ fontSize: 12, color: MUTED }}>{kellyResult.fraction.toFixed(2)}% do bankroll</div><div style={s.kellyWarning}>⚠ Kelly completo é agressivo. Considere ½ Kelly ({fmt(kellyResult.amount / 2)}) para maior proteção do bankroll.</div></>
+                  : <><span style={{ ...s.kpiLabel, color: R }}>SEM VALOR</span><div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>Essa aposta não tem EV positivo. Kelly recomenda não apostar.</div></>
+                }
               </div>
             )}
           </>}
