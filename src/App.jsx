@@ -249,8 +249,8 @@ export default function BankrollVault() {
         <div className="sidebar-header">
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
             <div>
-              <span className="logo-label">Bankroll</span>
-              <h1 className="logo-text">VAULT</h1>
+              <span className="logo-label">Banca</span>
+              <h1 className="logo-text">LÓGICA</h1>
             </div>
           </div>
         </div>
@@ -267,8 +267,8 @@ export default function BankrollVault() {
         <header className="app-header">
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div>
-              <span className="logo-label">Bankroll</span>
-              <h1 className="logo-text" style={{ fontSize: 20 }}>VAULT</h1>
+              <span className="logo-label">Banca</span>
+              <h1 className="logo-text" style={{ fontSize: 20 }}>LÓGICA</h1>
             </div>
           </div>
           <BalanceDisplay
