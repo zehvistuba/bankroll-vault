@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers } from "lucide-react";
-
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut } from "lucide-react";
+import { auth, db, googleProvider } from "./firebase";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
 const BOOKMAKERS = ["Bet365", "Betano", "Sportingbet", "Novibet", "Betnacional", "Pinnacle", "Betfair", "KTO", "Outros"];
@@ -356,19 +358,65 @@ export default function BankrollVault() {
   const [view, setView] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const [analyzeTab, setAnalyzeTab] = useState("ia");
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  const [bets, setBets] = useState(() => {
-    try { const v = localStorage.getItem("vault_bets"); return v ? JSON.parse(v) : []; } catch { return []; }
-  });
-  const [config, setConfig] = useState(() => {
-    try { const v = localStorage.getItem("vault_cfg"); return v ? JSON.parse(v) : { initialBankroll: 1000 }; } catch { return { initialBankroll: 1000 }; }
-  });
+  const [bets, setBets] = useState([]);
+  const [config, setConfig] = useState({ initialBankroll: 1000 });
   const [form, setForm] = useState(defaultForm());
   const [kellyForm, setKellyForm] = useState({ prob: "", odds: "", bankroll: "" });
 
-  useEffect(() => { setLoaded(true); }, []);
-  useEffect(() => { if (loaded) localStorage.setItem("vault_bets", JSON.stringify(bets)); }, [bets, loaded]);
-  useEffect(() => { if (loaded) localStorage.setItem("vault_cfg", JSON.stringify(config)); }, [config, loaded]);
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!user) { setBets([]); setConfig({ initialBankroll: 1000 }); setLoaded(false); return; }
+    const unsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setBets(data.bets || []);
+        setConfig(data.config || { initialBankroll: 1000 });
+      }
+      setLoaded(true);
+    });
+    return () => unsub();
+  }, [user]);
+
+  // Sincronização de Escrita para o Firebase
+  useEffect(() => {
+    if (loaded && user) {
+      setDoc(doc(db, "users", user.uid), { bets, config }, { merge: true }).catch(err => console.error("Sync error:", err));
+    }
+  }, [bets, config, loaded, user]);
+
+  const handleLogin = async () => {
+    try { await signInWithPopup(auth, googleProvider); } 
+    catch (err) { console.error("Login failed:", err); }
+  };
+
+  if (authLoading) return <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}><RefreshCw size={32} className="spin" /></div>;
+
+  if (!user) {
+    return (
+      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div className="card animate-fade-in" style={{ maxWidth: 400, width: "100%", textAlign: "center", padding: "40px 30px" }}>
+          <div style={{ marginBottom: 30 }}>
+            <span className="logo-label" style={{ fontSize: 14 }}>Banca</span>
+            <h1 className="logo-text" style={{ fontSize: 36, justifyContent: "center" }}>LÓGICA</h1>
+          </div>
+          <p style={{ color: "var(--muted)", marginBottom: 30, lineHeight: 1.6 }}>Faça login com o Google para salvar e sincronizar seu histórico de apostas na nuvem.</p>
+          <button onClick={handleLogin} style={{ width: "100%", background: "var(--primary)", color: "#000", border: "none", padding: "16px", borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            ENTRAR COM O GOOGLE
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const stats = useMemo(() => {
     const sorted = [...bets].sort((a, b) => a.date.localeCompare(b.date));
@@ -458,17 +506,27 @@ export default function BankrollVault() {
               <h1 className="logo-text" style={{ fontSize: 20 }}>LÓGICA</h1>
             </div>
           </div>
-          <BalanceDisplay
-            value={stats.currentBankroll}
-            onChange={v => setConfig(p => ({ ...p, initialBankroll: v - stats.totalPL }))}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <BalanceDisplay
+              value={stats.currentBankroll}
+              onChange={v => setConfig(p => ({ ...p, initialBankroll: v - stats.totalPL }))}
+            />
+            <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+              <LogOut size={16} />
+            </button>
+          </div>
         </header>
 
         {/* DESKTOP HEADER INFO */}
         <div className="main-content">
           <div className="desktop-header-info" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
             <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text)" }}>{NAV.find(n => n.id === view)?.label}</h2>
-            <BalanceDisplay value={stats.currentBankroll} onChange={v => setConfig(p => ({ ...p, initialBankroll: v - stats.totalPL }))} />
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <BalanceDisplay value={stats.currentBankroll} onChange={v => setConfig(p => ({ ...p, initialBankroll: v - stats.totalPL }))} />
+              <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="animate-fade-in">
