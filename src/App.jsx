@@ -367,6 +367,7 @@ export default function BankrollVault() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authInProgress, setAuthInProgress] = useState(false);
+  const [syncError, setSyncError] = useState("");
 
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
@@ -383,12 +384,17 @@ export default function BankrollVault() {
 
   useEffect(() => {
     if (!user) { setBets([]); setConfig({ initialBankroll: 1000 }); setLoaded(false); return; }
+    setSyncError("");
     const unsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setBets(data.bets || []);
         setConfig(data.config || { initialBankroll: 1000 });
       }
+      setLoaded(true);
+    }, (err) => {
+      console.error("Snapshot error:", err);
+      setSyncError("Erro de leitura do banco: " + err.message);
       setLoaded(true);
     });
     return () => unsub();
@@ -397,7 +403,12 @@ export default function BankrollVault() {
   // Sincronização de Escrita para o Firebase
   useEffect(() => {
     if (loaded && user) {
-      setDoc(doc(db, "users", user.uid), { bets, config }, { merge: true }).catch(err => console.error("Sync error:", err));
+      setDoc(doc(db, "users", user.uid), { bets, config }, { merge: true })
+        .then(() => setSyncError(""))
+        .catch(err => {
+          console.error("Sync error:", err);
+          setSyncError("Não foi possível salvar na nuvem: " + err.message);
+        });
     }
   }, [bets, config, loaded, user]);
 
@@ -584,6 +595,12 @@ export default function BankrollVault() {
             </button>
           </div>
         </header>
+
+        {syncError && (
+          <div style={{ background: "rgba(255, 61, 90, 0.1)", borderBottom: "1px solid rgba(255, 61, 90, 0.3)", color: "var(--danger)", padding: "12px 20px", fontSize: 13, display: "flex", justifyContent: "center", alignItems: "center", gap: 8 }}>
+            <Info size={16} /> {syncError}
+          </div>
+        )}
 
         {/* DESKTOP HEADER INFO */}
         <div className="main-content">
