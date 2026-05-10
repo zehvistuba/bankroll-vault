@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
-import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -395,8 +395,12 @@ export default function BankrollVault() {
   }, [bets, config, loaded, user]);
 
   const handleLogin = async () => {
-    try { await signInWithPopup(auth, googleProvider); } 
-    catch (err) { console.error("Login failed:", err); }
+    try { 
+      await signInWithRedirect(auth, googleProvider); 
+    } catch (err) { 
+      console.error("Login failed:", err); 
+      alert("Erro ao tentar fazer login: " + err.message);
+    }
   };
 
   if (authLoading) return <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}><RefreshCw size={32} className="spin" /></div>;
