@@ -117,20 +117,28 @@ Comente sobre consistência do stake, concentração de risco, e se o apostador 
 
 Seja técnico. Use os números reais dos dados. Máximo 550 palavras.`;
 
-function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets }) {
+function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKeyChange }) {
   const [insight, setInsight] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
   const [draftKey, setDraftKey] = useState(apiKey);
-  const [isEditingKey, setIsEditingKey] = useState(!apiKey);
+  const [isEditingKey, setIsEditingKey] = useState(false);
   const [model, setModel] = useState(() => localStorage.getItem("gemini_model") || "gemini-2.0-flash");
   const settled = bets.filter(b => b.result !== "pending");
 
+  useEffect(() => {
+    if (apiKey) {
+      setIsEditingKey(false);
+      setDraftKey(apiKey);
+    } else {
+      setIsEditingKey(true);
+    }
+  }, [apiKey]);
+
   const saveKey = () => {
-    localStorage.setItem("gemini_api_key", draftKey);
-    setApiKey(draftKey);
-    setIsEditingKey(false);
+    const trimmed = draftKey.trim();
+    onApiKeyChange(trimmed);
+    if (trimmed) setIsEditingKey(false);
   };
 
   const changeModel = (m) => { setModel(m); localStorage.setItem("gemini_model", m); };
@@ -371,6 +379,7 @@ export default function BankrollVault() {
 
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
+  const [geminiKey, setGeminiKey] = useState("");
   const [form, setForm] = useState(defaultForm());
   const [kellyForm, setKellyForm] = useState({ prob: "", odds: "", bankroll: "" });
 
@@ -383,13 +392,14 @@ export default function BankrollVault() {
   }, []);
 
   useEffect(() => {
-    if (!user) { setBets([]); setConfig({ initialBankroll: 1000 }); setLoaded(false); return; }
+    if (!user) { setBets([]); setConfig({ initialBankroll: 1000 }); setGeminiKey(""); setLoaded(false); return; }
     setSyncError("");
     const unsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setBets(data.bets || []);
         setConfig(data.config || { initialBankroll: 1000 });
+        setGeminiKey(data.geminiKey || "");
       }
       setLoaded(true);
     }, (err) => {
@@ -408,6 +418,17 @@ export default function BankrollVault() {
     } catch (err) {
       console.error("Save error:", err);
       setSyncError("Não foi possível salvar na nuvem: " + err.message);
+    }
+  }, [user]);
+
+  const saveGeminiKey = useCallback(async (key) => {
+    setGeminiKey(key);
+    if (!user) return;
+    try {
+      await setDoc(doc(db, "users", user.uid), { geminiKey: key }, { merge: true });
+    } catch (err) {
+      console.error("Save key error:", err);
+      setSyncError("Não foi possível salvar a API key na nuvem: " + err.message);
     }
   }, [user]);
 
@@ -894,7 +915,7 @@ export default function BankrollVault() {
                     {tabBtn("bookmaker", "Casas de Aposta")}
                     {tabBtn("sport", "Esportes")}
                   </div>
-                  {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} />}
+                  {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
                   {analyzeTab === "market" && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="PERFORMANCE POR MERCADO" data={marketSeg} /></>}
                   {analyzeTab === "bookmaker" && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="PERFORMANCE POR CASA DE APOSTA" data={bookSeg} /></>}
                   {analyzeTab === "sport" && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="PERFORMANCE POR ESPORTE" data={sportSeg} /></>}
