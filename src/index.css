@@ -534,6 +534,22 @@ body {
   background: rgba(139, 127, 245, 0.03);
 }
 
+/* Sidebar User Info */
+.sidebar-user {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .sidebar-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: auto;
+    padding: 20px 24px;
+    border-top: 1px solid var(--border);
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

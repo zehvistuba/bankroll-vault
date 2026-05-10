@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
-import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -372,10 +372,13 @@ export default function BankrollVault() {
   // Email/Password states
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nome, setNome] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authInProgress, setAuthInProgress] = useState(false);
   const [syncError, setSyncError] = useState("");
+  const [userDisplayName, setUserDisplayName] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
@@ -386,6 +389,7 @@ export default function BankrollVault() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      setUserDisplayName(u?.displayName || u?.email?.split("@")[0] || "");
       setAuthLoading(false);
     });
     return () => unsub();
@@ -451,7 +455,12 @@ export default function BankrollVault() {
     setAuthInProgress(true);
     try {
       if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        if (nome.trim()) {
+          await updateProfile(cred.user, { displayName: nome.trim() });
+          setUserDisplayName(nome.trim());
+        }
+        await sendEmailVerification(cred.user);
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -511,6 +520,12 @@ export default function BankrollVault() {
           </div>
 
           <form onSubmit={handleEmailAuth} style={{ marginBottom: 20 }}>
+            {isRegistering && (
+              <div className="form-group">
+                <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><User size={12}/> NOME</span>
+                <input type="text" value={nome} onChange={e => setNome(e.target.value)} className="input" placeholder="Seu nome" />
+              </div>
+            )}
             <div className="form-group">
               <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Mail size={12}/> E-MAIL</span>
               <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="input" placeholder="seu@email.com" />
@@ -528,7 +543,7 @@ export default function BankrollVault() {
             
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
               <span style={{ color: "var(--muted)" }}>{isRegistering ? "Já tem conta?" : "Não tem conta?"} </span>
-              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); setNome(""); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
                 {isRegistering ? "Faça login" : "Cadastre-se"}
               </button>
             </div>
@@ -602,6 +617,17 @@ export default function BankrollVault() {
             <Icon size={20} /><span className="nav-label">{label}</span>
           </button>
         ))}
+        <div className="sidebar-user">
+          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), var(--primary))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+            {(userDisplayName[0] || "?").toUpperCase()}
+          </div>
+          <div style={{ overflow: "hidden" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              Olá, {userDisplayName.split(" ")[0] || "Usuário"}!
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.email}</div>
+          </div>
+        </div>
       </nav>
 
       <div style={{ display: "flex", flexDirection: "column", flex: 1, width: "100%", height: "100%", overflow: "hidden" }}>
@@ -613,6 +639,9 @@ export default function BankrollVault() {
               <span className="logo-label">Banca</span>
               <h1 className="logo-text" style={{ fontSize: 20 }}>LÓGICA</h1>
             </div>
+            <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+              Olá, {userDisplayName.split(" ")[0] || ""}!
+            </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <BalanceDisplay
@@ -898,8 +927,22 @@ export default function BankrollVault() {
                           {clv != null && <span className="bet-stat" style={{ color: clv >= 0 ? "var(--primary)" : "var(--danger)", fontWeight: 700 }}>CLV: {clv >= 0 ? "+" : ""}{clv.toFixed(1)}%</span>}
                         </div>
                       </div>
-                      <button onClick={() => { const nb = bets.filter(b => b.id !== bet.id); setBets(nb); saveData(nb, config); }} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, transition: "background 0.2s ease", flexShrink: 0 }} onMouseOver={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}><X size={18} /></button>
+                      {deletingId === bet.id ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0, alignItems: "flex-end" }}>
+                          <button onClick={() => { const nb = bets.filter(b => b.id !== bet.id); setBets(nb); saveData(nb, config); setDeletingId(null); }} style={{ fontSize: 11, background: "rgba(255,61,90,0.15)", color: "var(--danger)", border: "1px solid rgba(255,61,90,0.35)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>EXCLUIR</button>
+                          <button onClick={() => setDeletingId(null)} style={{ fontSize: 11, background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>CANCELAR</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setDeletingId(bet.id)} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, transition: "background 0.2s ease", flexShrink: 0 }} onMouseOver={e => e.currentTarget.style.color = "var(--danger)"} onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}><X size={18} /></button>
+                      )}
                     </div>
+                    {bet.result === "pending" && (
+                      <div style={{ display: "flex", gap: 10, marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                        <button className="outline-btn g" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "win" } : b); setBets(nb); saveData(nb, config); }}>GANHOU</button>
+                        <button className="outline-btn r" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "loss" } : b); setBets(nb); saveData(nb, config); }}>PERDEU</button>
+                        <button className="outline-btn muted" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "void" } : b); setBets(nb); saveData(nb, config); }}>VOID</button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
