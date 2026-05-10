@@ -14,7 +14,7 @@ const getBetPL = (bet) => bet.result === "win" ? bet.stake * (bet.odds - 1) : be
 const getCLV = (bet) => bet.closingOdds ? ((bet.odds - bet.closingOdds) / bet.closingOdds * 100) : null;
 const RESULT_MAP = { win: ["W", "g"], loss: ["L", "r"], void: ["V", "muted"], pending: ["?", "acc"] };
 const defaultSelection = () => ({ id: Date.now() + Math.random(), description: "", sport: "Futebol", market: "1x2", odds: "" });
-const defaultForm = () => ({ date: new Date().toISOString().split("T")[0], betType: "simple", sport: "Futebol", market: "1x2", bookmaker: "Bet365", description: "", odds: "", closingOdds: "", stake: "", result: "pending", notes: "", selections: [defaultSelection(), defaultSelection()] });
+const defaultForm = () => ({ date: new Date().toISOString().split("T")[0], betType: "simple", sport: "Futebol", market: "1x2", bookmaker: localStorage.getItem("lastBookmaker") || "Bet365", description: "", odds: "", closingOdds: "", stake: "", result: "pending", notes: "", selections: [defaultSelection(), defaultSelection()] });
 
 function buildSegments(bets, key) {
   const map = {};
@@ -123,7 +123,7 @@ function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKe
   const [error, setError] = useState("");
   const [draftKey, setDraftKey] = useState(apiKey);
   const [isEditingKey, setIsEditingKey] = useState(false);
-  const [model, setModel] = useState(() => localStorage.getItem("gemini_model") || "gemini-2.0-flash");
+  const [model, setModel] = useState(() => localStorage.getItem("gemini_model") || "gemini-2.5-flash");
   const settled = bets.filter(b => b.result !== "pending");
 
   useEffect(() => {
@@ -257,7 +257,7 @@ function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKe
       {isEditingKey && (
         <div style={{ marginBottom: 20, padding: 16, background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px dashed var(--border)" }}>
           <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 12, lineHeight: 1.7 }}>
-            Insira sua <strong>Google Gemini API Key</strong>. Fica salva apenas no seu navegador e nunca sai do dispositivo.{" "}
+            Insira sua <strong>Google Gemini API Key</strong>. Fica salva na nuvem vinculada à sua conta — disponível em todos os seus dispositivos.{" "}
             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "none", borderBottom: "1px solid rgba(139,127,245,0.4)" }}>Obter chave gratuita no AI Studio →</a>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -413,7 +413,7 @@ export default function BankrollVault() {
   const saveData = useCallback(async (newBets, newConfig) => {
     if (!user) return;
     try {
-      await setDoc(doc(db, "users", user.uid), { bets: newBets, config: newConfig });
+      await setDoc(doc(db, "users", user.uid), { bets: newBets, config: newConfig }, { merge: true });
       setSyncError("");
     } catch (err) {
       console.error("Save error:", err);
@@ -493,7 +493,12 @@ export default function BankrollVault() {
     return { fraction: f * 100, amount: f * br, hasValue: f > 0 };
   }, [kellyForm, stats.currentBankroll]);
 
-  if (authLoading) return <div style={{ display: "flex", width: "100%", height: "100vh", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}><RefreshCw size={32} className="spin" /></div>;
+  if (authLoading || (user && !loaded)) return (
+    <div style={{ display: "flex", width: "100%", height: "100vh", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, color: "var(--accent)" }}>
+      <RefreshCw size={32} style={{ animation: "spin 1s linear infinite" }} />
+      <span style={{ fontSize: 12, color: "var(--muted)", letterSpacing: 2, fontWeight: 600, fontFamily: "var(--font-mono)" }}>CARREGANDO...</span>
+    </div>
+  );
 
   if (!user) {
     return (
@@ -560,6 +565,7 @@ export default function BankrollVault() {
     }
     setBets(newBets);
     saveData(newBets, config);
+    localStorage.setItem("lastBookmaker", form.bookmaker);
     setForm(defaultForm()); setView("dashboard");
   };
 
