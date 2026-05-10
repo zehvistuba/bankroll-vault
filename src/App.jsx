@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
-import { signInWithRedirect, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -405,10 +405,12 @@ export default function BankrollVault() {
     try { 
       setAuthInProgress(true);
       setAuthError("");
-      await signInWithRedirect(auth, googleProvider); 
+      await signInWithPopup(auth, googleProvider); 
     } catch (err) { 
       setAuthInProgress(false);
-      setAuthError("Erro ao tentar fazer login com Google: " + err.message);
+      if (err.code !== "auth/popup-closed-by-user") {
+        setAuthError("Erro ao tentar fazer login com Google: " + err.message);
+      }
     }
   };
 
