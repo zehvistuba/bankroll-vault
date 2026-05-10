@@ -431,11 +431,40 @@ export default function BankrollVault() {
     }
   };
 
-  if (authLoading) return <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}><RefreshCw size={32} className="spin" /></div>;
+  const stats = useMemo(() => {
+    const sorted = [...bets].sort((a, b) => a.date.localeCompare(b.date));
+    let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
+    const chartData = [{ d: "Início", v: config.initialBankroll }];
+    sorted.forEach(bet => {
+      const pl = getBetPL(bet); const clv = getCLV(bet);
+      if (bet.result !== "pending") {
+        totalStake += bet.stake; totalPL += pl; bankroll += pl;
+        if (bet.result === "win") wins++;
+        if (bet.result === "loss") losses++;
+        chartData.push({ d: bet.date.slice(5), v: Math.round(bankroll * 100) / 100 });
+      }
+      if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
+    });
+    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: bets.length, chartData };
+  }, [bets, config.initialBankroll]);
+
+  const marketSeg = useMemo(() => buildSegments(bets, "market"), [bets]);
+  const bookSeg = useMemo(() => buildSegments(bets, "bookmaker"), [bets]);
+  const sportSeg = useMemo(() => buildSegments(bets, "sport"), [bets]);
+
+  const kellyResult = useMemo(() => {
+    const p = parseFloat(kellyForm.prob) / 100; const b = parseFloat(kellyForm.odds) - 1;
+    const br = parseFloat(kellyForm.bankroll) || stats.currentBankroll;
+    if (!p || !b || p <= 0 || p >= 1 || b <= 0) return null;
+    const f = (b * p - (1 - p)) / b;
+    return { fraction: f * 100, amount: f * br, hasValue: f > 0 };
+  }, [kellyForm, stats.currentBankroll]);
+
+  if (authLoading) return <div style={{ display: "flex", width: "100%", height: "100vh", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}><RefreshCw size={32} className="spin" /></div>;
 
   if (!user) {
     return (
-      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ display: "flex", width: "100%", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: 20 }}>
         <div className="card animate-fade-in" style={{ maxWidth: 400, width: "100%", padding: "40px 30px" }}>
           <div style={{ marginBottom: 30, textAlign: "center" }}>
             <span className="logo-label" style={{ fontSize: 14 }}>Banca</span>
@@ -482,34 +511,7 @@ export default function BankrollVault() {
     );
   }
 
-  const stats = useMemo(() => {
-    const sorted = [...bets].sort((a, b) => a.date.localeCompare(b.date));
-    let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
-    const chartData = [{ d: "Início", v: config.initialBankroll }];
-    sorted.forEach(bet => {
-      const pl = getBetPL(bet); const clv = getCLV(bet);
-      if (bet.result !== "pending") {
-        totalStake += bet.stake; totalPL += pl; bankroll += pl;
-        if (bet.result === "win") wins++;
-        if (bet.result === "loss") losses++;
-        chartData.push({ d: bet.date.slice(5), v: Math.round(bankroll * 100) / 100 });
-      }
-      if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
-    });
-    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: bets.length, chartData };
-  }, [bets, config.initialBankroll]);
 
-  const marketSeg = useMemo(() => buildSegments(bets, "market"), [bets]);
-  const bookSeg = useMemo(() => buildSegments(bets, "bookmaker"), [bets]);
-  const sportSeg = useMemo(() => buildSegments(bets, "sport"), [bets]);
-
-  const kellyResult = useMemo(() => {
-    const p = parseFloat(kellyForm.prob) / 100; const b = parseFloat(kellyForm.odds) - 1;
-    const br = parseFloat(kellyForm.bankroll) || stats.currentBankroll;
-    if (!p || !b || p <= 0 || p >= 1 || b <= 0) return null;
-    const f = (b * p - (1 - p)) / b;
-    return { fraction: f * 100, amount: f * br, hasValue: f > 0 };
-  }, [kellyForm, stats.currentBankroll]);
 
   const addBet = () => {
     if (form.betType === "multiple") {
