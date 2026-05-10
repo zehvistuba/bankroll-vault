@@ -87,10 +87,8 @@ function HighlightCards({ data, bestLabel, worstLabel }) {
 }
 
 const GEMINI_MODELS = [
-  { id: "gemini-2.5-flash", label: "Flash 2.5", desc: "Rápido · Grátis" },
-  { id: "gemini-2.0-flash", label: "Flash 2.0", desc: "Estável · Grátis" },
-  { id: "gemini-2.5-pro", label: "Pro 2.5", desc: "Profundo · Quota limitada" },
-  { id: "gemini-3-flash-preview", label: "Flash 3.0", desc: "Preview Experimental" }
+  { id: "gemini-2.5-flash", label: "Flash 2.5", desc: "Recomendado · Estável" },
+  { id: "gemini-3-flash-preview", label: "Flash 3.0", desc: "Nova Geração · Preview" }
 ];
 
 const SYSTEM_PROMPT = `Você é um analista quantitativo de apostas esportivas de nível profissional, especializado em Expected Value (EV), gestão de banca e detecção de padrões comportamentais. Analise os dados fornecidos e gere um diagnóstico técnico em português brasileiro.
