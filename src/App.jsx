@@ -87,6 +87,7 @@ function HighlightCards({ data, bestLabel, worstLabel }) {
 }
 
 const GEMINI_MODELS = [
+  { id: "gemini-1.5-flash", label: "Flash 1.5", desc: "Mais estável · Grátis" },
   { id: "gemini-2.0-flash", label: "Flash 2.0", desc: "Rápido · Grátis" },
   { id: "gemini-2.0-flash-thinking-exp-01-21", label: "Flash Thinking", desc: "Pensamento · Grátis" },
   { id: "gemini-2.0-pro-exp-02-05", label: "Pro 2.0", desc: "Profundo · Quota limitada" },
