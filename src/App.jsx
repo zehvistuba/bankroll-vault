@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
-import { signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithRedirect, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -361,6 +361,13 @@ export default function BankrollVault() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Email/Password states
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authInProgress, setAuthInProgress] = useState(false);
+
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
   const [form, setForm] = useState(defaultForm());
@@ -394,12 +401,33 @@ export default function BankrollVault() {
     }
   }, [bets, config, loaded, user]);
 
-  const handleLogin = async () => {
+  const handleGoogleLogin = async () => {
     try { 
+      setAuthInProgress(true);
+      setAuthError("");
       await signInWithRedirect(auth, googleProvider); 
     } catch (err) { 
-      console.error("Login failed:", err); 
-      alert("Erro ao tentar fazer login: " + err.message);
+      setAuthInProgress(false);
+      setAuthError("Erro ao tentar fazer login com Google: " + err.message);
+    }
+  };
+
+  const handleEmailAuth = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthInProgress(true);
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      if (err.code === "auth/email-already-in-use") setAuthError("Este e-mail já está em uso.");
+      else if (err.code === "auth/invalid-credential") setAuthError("E-mail ou senha incorretos.");
+      else if (err.code === "auth/weak-password") setAuthError("A senha deve ter pelo menos 6 caracteres.");
+      else setAuthError("Erro de autenticação: " + err.message);
+      setAuthInProgress(false);
     }
   };
 
@@ -407,15 +435,47 @@ export default function BankrollVault() {
 
   if (!user) {
     return (
-      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div className="card animate-fade-in" style={{ maxWidth: 400, width: "100%", textAlign: "center", padding: "40px 30px" }}>
-          <div style={{ marginBottom: 30 }}>
+      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div className="card animate-fade-in" style={{ maxWidth: 400, width: "100%", padding: "40px 30px" }}>
+          <div style={{ marginBottom: 30, textAlign: "center" }}>
             <span className="logo-label" style={{ fontSize: 14 }}>Banca</span>
             <h1 className="logo-text" style={{ fontSize: 36, justifyContent: "center" }}>LÓGICA</h1>
+            <p style={{ color: "var(--muted)", marginTop: 12, fontSize: 14, lineHeight: 1.6 }}>Acesse para salvar sua banca na nuvem.</p>
           </div>
-          <p style={{ color: "var(--muted)", marginBottom: 30, lineHeight: 1.6 }}>Faça login com o Google para salvar e sincronizar seu histórico de apostas na nuvem.</p>
-          <button onClick={handleLogin} style={{ width: "100%", background: "var(--primary)", color: "#000", border: "none", padding: "16px", borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-            ENTRAR COM O GOOGLE
+
+          <form onSubmit={handleEmailAuth} style={{ marginBottom: 20 }}>
+            <div className="form-group">
+              <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Mail size={12}/> E-MAIL</span>
+              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="input" placeholder="seu@email.com" />
+            </div>
+            <div className="form-group">
+              <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Lock size={12}/> SENHA</span>
+              <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="input" placeholder="••••••••" minLength={6} />
+            </div>
+
+            {authError && <div style={{ color: "var(--danger)", fontSize: 13, marginBottom: 16, background: "rgba(255,61,90,0.1)", padding: 10, borderRadius: 6, lineHeight: 1.5, border: "1px solid rgba(255,61,90,0.3)" }}>{authError}</div>}
+
+            <button type="submit" disabled={authInProgress} style={{ width: "100%", background: "var(--primary)", color: "#000", border: "none", padding: "14px", borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: authInProgress ? "not-allowed" : "pointer", opacity: authInProgress ? 0.7 : 1, transition: "opacity 0.2s" }}>
+              {authInProgress ? "CARREGANDO..." : (isRegistering ? "CRIAR CONTA" : "ENTRAR")}
+            </button>
+            
+            <div style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
+              <span style={{ color: "var(--muted)" }}>{isRegistering ? "Já tem conta?" : "Não tem conta?"} </span>
+              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                {isRegistering ? "Faça login" : "Cadastre-se"}
+              </button>
+            </div>
+          </form>
+
+          <div style={{ display: "flex", alignItems: "center", margin: "24px 0" }}>
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            <span style={{ padding: "0 12px", color: "var(--muted)", fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>OU</span>
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+          </div>
+
+          <button type="button" onClick={handleGoogleLogin} disabled={authInProgress} style={{ width: "100%", background: "transparent", border: "1px solid var(--border)", color: "var(--text)", padding: "14px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: authInProgress ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: authInProgress ? 0.7 : 1, transition: "background 0.2s" }} onMouseOver={e => !authInProgress && (e.currentTarget.style.background = "rgba(255,255,255,0.05)")} onMouseOut={e => !authInProgress && (e.currentTarget.style.background = "transparent")}>
+            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            CONTINUAR COM GOOGLE
           </button>
         </div>
       </div>
