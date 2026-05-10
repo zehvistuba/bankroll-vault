@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
@@ -400,17 +400,16 @@ export default function BankrollVault() {
     return () => unsub();
   }, [user]);
 
-  // Sincronização de Escrita para o Firebase
-  useEffect(() => {
-    if (loaded && user) {
-      setDoc(doc(db, "users", user.uid), { bets, config }, { merge: true })
-        .then(() => setSyncError(""))
-        .catch(err => {
-          console.error("Sync error:", err);
-          setSyncError("Não foi possível salvar na nuvem: " + err.message);
-        });
+  const saveData = useCallback(async (newBets, newConfig) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, "users", user.uid), { bets: newBets, config: newConfig });
+      setSyncError("");
+    } catch (err) {
+      console.error("Save error:", err);
+      setSyncError("Não foi possível salvar na nuvem: " + err.message);
     }
-  }, [bets, config, loaded, user]);
+  }, [user]);
 
   const handleGoogleLogin = async () => {
     try { 
@@ -527,16 +526,19 @@ export default function BankrollVault() {
 
 
   const addBet = () => {
+    let newBets;
     if (form.betType === "multiple") {
       const valid = form.selections.filter(s => s.description && s.odds && parseFloat(s.odds) > 0);
       if (!form.stake || valid.length < 2) return;
       const parsed = valid.map(s => ({ ...s, odds: parseFloat(s.odds) }));
       const combinedOdds = Math.round(parsed.reduce((acc, s) => acc * s.odds, 1) * 100) / 100;
-      setBets(prev => [...prev, { id: Date.now(), type: "multiple", date: form.date, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") }]);
+      newBets = [...bets, { id: Date.now(), type: "multiple", date: form.date, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") }];
     } else {
       if (!form.description || !form.odds || !form.stake) return;
-      setBets(prev => [...prev, { ...form, id: Date.now(), type: "simple", odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake) }]);
+      newBets = [...bets, { ...form, id: Date.now(), type: "simple", odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake) }];
     }
+    setBets(newBets);
+    saveData(newBets, config);
     setForm(defaultForm()); setView("dashboard");
   };
 
@@ -588,7 +590,7 @@ export default function BankrollVault() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <BalanceDisplay
               value={stats.currentBankroll}
-              onChange={v => setConfig(p => ({ ...p, initialBankroll: v - stats.totalPL }))}
+              onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; setConfig(nc); saveData(bets, nc); }}
             />
             <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
               <LogOut size={16} />
@@ -607,7 +609,7 @@ export default function BankrollVault() {
           <div className="desktop-header-info" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
             <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text)" }}>{NAV.find(n => n.id === view)?.label}</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <BalanceDisplay value={stats.currentBankroll} onChange={v => setConfig(p => ({ ...p, initialBankroll: v - stats.totalPL }))} />
+              <BalanceDisplay value={stats.currentBankroll} onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; setConfig(nc); saveData(bets, nc); }} />
               <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
                 <LogOut size={16} />
               </button>
@@ -690,9 +692,9 @@ export default function BankrollVault() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 12 }}>
-                        <button className="outline-btn g" onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "win" } : b))}>GANHOU</button>
-                        <button className="outline-btn r" onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "loss" } : b))}>PERDEU</button>
-                        <button className="outline-btn muted" onClick={() => setBets(p => p.map(b => b.id === bet.id ? { ...b, result: "void" } : b))}>VOID</button>
+                        <button className="outline-btn g" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "win" } : b); setBets(nb); saveData(nb, config); }}>GANHOU</button>
+                        <button className="outline-btn r" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "loss" } : b); setBets(nb); saveData(nb, config); }}>PERDEU</button>
+                        <button className="outline-btn muted" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "void" } : b); setBets(nb); saveData(nb, config); }}>VOID</button>
                       </div>
                     </div>
                   ))}
@@ -869,7 +871,7 @@ export default function BankrollVault() {
                           {clv != null && <span className="bet-stat" style={{ color: clv >= 0 ? "var(--primary)" : "var(--danger)", fontWeight: 700 }}>CLV: {clv >= 0 ? "+" : ""}{clv.toFixed(1)}%</span>}
                         </div>
                       </div>
-                      <button onClick={() => setBets(p => p.filter(b => b.id !== bet.id))} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, transition: "background 0.2s ease", flexShrink: 0 }} onMouseOver={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}><X size={18} /></button>
+                      <button onClick={() => { const nb = bets.filter(b => b.id !== bet.id); setBets(nb); saveData(nb, config); }} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, transition: "background 0.2s ease", flexShrink: 0 }} onMouseOver={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}><X size={18} /></button>
                     </div>
                   </div>
                 );
