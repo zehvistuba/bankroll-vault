@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
@@ -379,6 +379,8 @@ export default function BankrollVault() {
   const [syncError, setSyncError] = useState("");
   const [userDisplayName, setUserDisplayName] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const [editingBet, setEditingBet] = useState(null);
+  const [historyFilter, setHistoryFilter] = useState({ result: "all", search: "" });
 
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
@@ -566,26 +568,61 @@ export default function BankrollVault() {
 
 
 
-  const addBet = () => {
-    let newBets;
+  const buildBetData = () => {
     if (form.betType === "multiple") {
       const valid = form.selections.filter(s => s.description && s.odds && parseFloat(s.odds) > 0);
-      if (!form.stake || valid.length < 2) return;
+      if (!form.stake || valid.length < 2) return null;
       const parsed = valid.map(s => ({ ...s, odds: parseFloat(s.odds) }));
       const combinedOdds = Math.round(parsed.reduce((acc, s) => acc * s.odds, 1) * 100) / 100;
-      newBets = [...bets, { id: Date.now(), type: "multiple", date: form.date, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") }];
+      return { type: "multiple", date: form.date, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") };
     } else {
-      if (!form.description || !form.odds || !form.stake) return;
-      newBets = [...bets, { ...form, id: Date.now(), type: "simple", odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake) }];
+      if (!form.description || !form.odds || !form.stake) return null;
+      return { type: "simple", date: form.date, sport: form.sport, market: form.market, bookmaker: form.bookmaker, description: form.description, odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake), result: form.result, notes: form.notes };
     }
+  };
+
+  const addBet = () => {
+    const data = buildBetData();
+    if (!data) return;
+    const newBets = editingBet
+      ? bets.map(b => b.id === editingBet.id ? { ...data, id: editingBet.id } : b)
+      : [...bets, { ...data, id: Date.now() }];
     setBets(newBets);
     saveData(newBets, config);
     localStorage.setItem("lastBookmaker", form.bookmaker);
-    setForm(defaultForm()); setView("dashboard");
+    const dest = editingBet ? "history" : "dashboard";
+    setEditingBet(null);
+    setForm(defaultForm());
+    setView(dest);
+  };
+
+  const startEdit = (bet) => {
+    setEditingBet(bet);
+    setForm({
+      date: bet.date,
+      betType: bet.type === "multiple" ? "multiple" : "simple",
+      sport: bet.sport || "Futebol",
+      market: bet.market || "1x2",
+      bookmaker: bet.bookmaker || "Bet365",
+      description: bet.type === "multiple" ? "" : (bet.description || ""),
+      odds: bet.type === "multiple" ? "" : String(bet.odds ?? ""),
+      closingOdds: bet.closingOdds != null ? String(bet.closingOdds) : "",
+      stake: String(bet.stake ?? ""),
+      result: bet.result,
+      notes: bet.notes || "",
+      selections: bet.type === "multiple" && bet.selections?.length
+        ? bet.selections.map(s => ({ ...s, odds: String(s.odds) }))
+        : [defaultSelection(), defaultSelection()],
+    });
+    setView("register");
   };
 
   const pending = bets.filter(b => b.result === "pending");
   const hasSettled = bets.some(b => b.result !== "pending");
+  const filteredBets = [...bets]
+    .filter(b => historyFilter.result === "all" || b.result === historyFilter.result)
+    .filter(b => !historyFilter.search || b.description.toLowerCase().includes(historyFilter.search.toLowerCase()))
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   const NAV = [
     { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -768,7 +805,12 @@ export default function BankrollVault() {
 
             {/* REGISTRAR */}
             {view === "register" && <div className="card" style={{ maxWidth: 800, margin: "0 auto" }}>
-              <span className="section-title" style={{ marginBottom: 20 }}>NOVA APOSTA</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <span className="section-title" style={{ margin: 0 }}>{editingBet ? "EDITAR APOSTA" : "NOVA APOSTA"}</span>
+                {editingBet && (
+                  <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setView("history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
+                )}
+              </div>
 
               <div className="bet-type-toggle">
                 <button className={`bet-type-btn ${form.betType === "simple" ? "active" : ""}`} onClick={() => setForm(p => ({ ...p, betType: "simple" }))}>SIMPLES</button>
@@ -885,17 +927,35 @@ export default function BankrollVault() {
                 </>
               )}
 
-              <button className="btn" style={{ marginTop: 8 }} onClick={addBet}>REGISTRAR {form.betType === "multiple" ? "MÚLTIPLA" : "APOSTA"}</button>
+              <button className="btn" style={{ marginTop: 8 }} onClick={addBet}>{editingBet ? "SALVAR ALTERAÇÕES" : `REGISTRAR ${form.betType === "multiple" ? "MÚLTIPLA" : "APOSTA"}`}</button>
             </div>}
 
             {/* HISTÓRICO */}
             {view === "history" && <div style={{ maxWidth: 800, margin: "0 auto" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <span className="section-title" style={{ margin: 0 }}>HISTÓRICO DE APOSTAS</span>
-                <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>{bets.length} registros</span>
+                <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+                  {filteredBets.length}{filteredBets.length !== bets.length ? ` de ${bets.length}` : ""} registros
+                </span>
               </div>
-              {bets.length === 0 && <div className="empty-state"><List size={48} style={{ marginBottom: 16, color: "var(--border)", margin: "0 auto" }} /><div>Nenhuma aposta registrada.</div></div>}
-              {[...bets].sort((a, b) => b.date.localeCompare(a.date)).map(bet => {
+
+              {/* Filtros */}
+              <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[["all", "TODOS"], ["pending", "PENDENTES"], ["win", "GANHOU"], ["loss", "PERDEU"], ["void", "VOID"]].map(([val, label]) => (
+                    <button key={val} onClick={() => setHistoryFilter(f => ({ ...f, result: val }))} style={{ background: historyFilter.result === val ? "var(--primary)" : "rgba(0,0,0,0.2)", color: historyFilter.result === val ? "#000" : "var(--muted)", border: `1px solid ${historyFilter.result === val ? "var(--primary)" : "var(--border)"}`, borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)", transition: "all 0.2s ease", letterSpacing: 0.5 }}>{label}</button>
+                  ))}
+                </div>
+                <div style={{ position: "relative" }}>
+                  <Search size={14} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none" }} />
+                  <input type="text" placeholder="Buscar por descrição..." value={historyFilter.search} onChange={e => setHistoryFilter(f => ({ ...f, search: e.target.value }))} className="input" style={{ paddingLeft: 38, paddingTop: 12, paddingBottom: 12, fontSize: 13 }} />
+                  {historyFilter.search && <button onClick={() => setHistoryFilter(f => ({ ...f, search: "" }))} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 4, display: "flex" }}><X size={14} /></button>}
+                </div>
+              </div>
+
+              {bets.length === 0 && <div className="empty-state"><List size={48} style={{ color: "var(--border)", margin: "0 auto 16px" }} /><div>Nenhuma aposta registrada.</div></div>}
+              {bets.length > 0 && filteredBets.length === 0 && <div className="empty-state"><Search size={40} style={{ color: "var(--border)", margin: "0 auto 16px" }} /><div>Nenhuma aposta encontrada com esses filtros.</div></div>}
+              {filteredBets.map(bet => {
                 const pl = getBetPL(bet); const clv = getCLV(bet);
                 const [rlabel, rclass] = RESULT_MAP[bet.result] || ["?", "muted"];
                 return (
@@ -927,14 +987,19 @@ export default function BankrollVault() {
                           {clv != null && <span className="bet-stat" style={{ color: clv >= 0 ? "var(--primary)" : "var(--danger)", fontWeight: 700 }}>CLV: {clv >= 0 ? "+" : ""}{clv.toFixed(1)}%</span>}
                         </div>
                       </div>
-                      {deletingId === bet.id ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0, alignItems: "flex-end" }}>
-                          <button onClick={() => { const nb = bets.filter(b => b.id !== bet.id); setBets(nb); saveData(nb, config); setDeletingId(null); }} style={{ fontSize: 11, background: "rgba(255,61,90,0.15)", color: "var(--danger)", border: "1px solid rgba(255,61,90,0.35)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>EXCLUIR</button>
-                          <button onClick={() => setDeletingId(null)} style={{ fontSize: 11, background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>CANCELAR</button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setDeletingId(bet.id)} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, transition: "background 0.2s ease", flexShrink: 0 }} onMouseOver={e => e.currentTarget.style.color = "var(--danger)"} onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}><X size={18} /></button>
-                      )}
+                      <div style={{ display: "flex", gap: 2, flexShrink: 0, alignItems: "flex-start" }}>
+                        {deletingId !== bet.id && (
+                          <button onClick={() => startEdit(bet)} title="Editar aposta" style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex" }} onMouseOver={e => e.currentTarget.style.color = "var(--accent)"} onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}><Edit2 size={15} /></button>
+                        )}
+                        {deletingId === bet.id ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                            <button onClick={() => { const nb = bets.filter(b => b.id !== bet.id); setBets(nb); saveData(nb, config); setDeletingId(null); }} style={{ fontSize: 11, background: "rgba(255,61,90,0.15)", color: "var(--danger)", border: "1px solid rgba(255,61,90,0.35)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>EXCLUIR</button>
+                            <button onClick={() => setDeletingId(null)} style={{ fontSize: 11, background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>CANCELAR</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setDeletingId(bet.id)} title="Excluir aposta" style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex" }} onMouseOver={e => e.currentTarget.style.color = "var(--danger)"} onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}><X size={18} /></button>
+                        )}
+                      </div>
                     </div>
                     {bet.result === "pending" && (
                       <div style={{ display: "flex", gap: 10, marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
