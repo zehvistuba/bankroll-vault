@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
@@ -116,6 +116,31 @@ Comente sobre consistência do stake, concentração de risco, e se o apostador 
 3 ações concretas, priorizadas e específicas para as próximas 30 apostas. Cite mercados, limites ou comportamentos específicos.
 
 Seja técnico. Use os números reais dos dados. Máximo 550 palavras.`;
+
+const EXTRACTION_PROMPT = `Analise esta imagem de um comprovante/cupom de aposta esportiva. Extraia os dados e retorne APENAS um objeto JSON válido, sem markdown, sem texto adicional.
+
+Formato exato:
+{
+  "type": "simple" ou "multiple",
+  "bookmaker": "nome da casa de apostas",
+  "date": "YYYY-MM-DD",
+  "stake": número,
+  "odds": número,
+  "description": "descrição resumida da aposta",
+  "sport": "Futebol|Tênis|Basquete|Futebol Americano|MMA|Outros",
+  "market": "1x2|Over/Under|Escanteios|Ambas Marcam|Handicap Asiático|Handicap Europeu|Dupla Chance|Total de Pontos|Aces|Duplas Faltas|Outros",
+  "selections": [
+    { "description": "texto da seleção", "sport": "esporte", "market": "mercado", "odds": número }
+  ]
+}
+
+Regras:
+- type "multiple" se houver 2 ou mais seleções combinadas, caso contrário "simple"
+- Para apostas simples: selections deve ser []
+- stake: apenas o número decimal (sem R$)
+- odds: odd decimal (ex: 1.85). Para múltiplas é a odd combinada total
+- date: formato YYYY-MM-DD. Se não visível, use a data de hoje
+- Se um campo não for identificável com segurança, use null`;
 
 function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKeyChange }) {
   const [insight, setInsight] = useState("");
@@ -381,6 +406,9 @@ export default function BankrollVault() {
   const [deletingId, setDeletingId] = useState(null);
   const [editingBet, setEditingBet] = useState(null);
   const [historyFilter, setHistoryFilter] = useState({ result: "all", search: "" });
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState("");
+  const imageInputRef = useRef(null);
 
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
@@ -567,6 +595,43 @@ export default function BankrollVault() {
   }
 
 
+
+  const extractFromImage = async (file) => {
+    if (!geminiKey) { setExtractError("Configure a API Key do Gemini primeiro em Análise → Inteligência IA."); return; }
+    setExtracting(true); setExtractError("");
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader(); r.readAsDataURL(file);
+        r.onload = () => res(r.result.split(",")[1]); r.onerror = rej;
+      });
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: file.type, data: base64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 1024 } })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message);
+      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const ex = JSON.parse(cleaned);
+      const today = new Date().toISOString().split("T")[0];
+      const bk = BOOKMAKERS.includes(ex.bookmaker) ? ex.bookmaker : (localStorage.getItem("lastBookmaker") || "Betano");
+      if (ex.type === "multiple" && ex.selections?.length >= 2) {
+        setForm(p => ({ ...p, betType: "multiple", bookmaker: bk, date: ex.date || today,
+          stake: ex.stake != null ? String(ex.stake) : p.stake, result: "pending", closingOdds: "", notes: "",
+          selections: ex.selections.map(s => ({ id: Date.now() + Math.random(),
+            description: s.description || "", odds: s.odds != null ? String(s.odds) : "",
+            sport: SPORTS.includes(s.sport) ? s.sport : "Futebol",
+            market: MARKETS.includes(s.market) ? s.market : "1x2" })) }));
+      } else {
+        setForm(p => ({ ...p, betType: "simple", bookmaker: bk, date: ex.date || today,
+          description: ex.description || "", odds: ex.odds != null ? String(ex.odds) : "",
+          stake: ex.stake != null ? String(ex.stake) : p.stake, result: "pending", closingOdds: "", notes: "",
+          sport: SPORTS.includes(ex.sport) ? ex.sport : "Futebol",
+          market: MARKETS.includes(ex.market) ? ex.market : "1x2" }));
+      }
+    } catch (err) { setExtractError("Não foi possível extrair os dados. Tente uma imagem mais nítida. (" + err.message + ")"); }
+    finally { setExtracting(false); if (imageInputRef.current) imageInputRef.current.value = ""; }
+  };
 
   const buildBetData = () => {
     if (form.betType === "multiple") {
@@ -808,9 +873,27 @@ export default function BankrollVault() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <span className="section-title" style={{ margin: 0 }}>{editingBet ? "EDITAR APOSTA" : "NOVA APOSTA"}</span>
                 {editingBet && (
-                  <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setView("history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
+                  <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setExtractError(""); setView("history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
                 )}
               </div>
+
+              {/* IMPORTAR POR IMAGEM */}
+              <div style={{ marginBottom: 24, padding: "16px 20px", background: "rgba(139,127,245,0.06)", border: "1px dashed rgba(139,127,245,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
+                    <Camera size={15} color="var(--accent)" /> Importar por imagem
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Envie um screenshot do cupom — IA preenche o formulário automaticamente</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {!geminiKey && <span style={{ fontSize: 11, color: "var(--danger)" }}>API Key não configurada</span>}
+                  <button onClick={() => imageInputRef.current?.click()} disabled={extracting || !geminiKey} style={{ display: "flex", alignItems: "center", gap: 8, background: extracting || !geminiKey ? "var(--border)" : "rgba(139,127,245,0.15)", color: extracting || !geminiKey ? "var(--muted)" : "var(--accent)", border: "1px solid rgba(139,127,245,0.3)", borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: extracting || !geminiKey ? "not-allowed" : "pointer", fontFamily: "var(--font-sans)", transition: "all 0.2s", whiteSpace: "nowrap" }}>
+                    {extracting ? <><RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> LENDO...</> : <><Camera size={13} /> SELECIONAR</>}
+                  </button>
+                  <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) extractFromImage(e.target.files[0]); }} />
+                </div>
+              </div>
+              {extractError && <div style={{ marginBottom: 16, fontSize: 13, color: "var(--danger)", padding: "12px 14px", background: "rgba(255,61,90,0.08)", borderRadius: 8, border: "1px solid rgba(255,61,90,0.2)" }}>{extractError}</div>}
 
               <div className="bet-type-toggle">
                 <button className={`bet-type-btn ${form.betType === "simple" ? "active" : ""}`} onClick={() => setForm(p => ({ ...p, betType: "simple" }))}>SIMPLES</button>
