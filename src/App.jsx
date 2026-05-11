@@ -606,13 +606,16 @@ export default function BankrollVault() {
       });
       const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: file.type, data: base64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 1024 } })
+        body: JSON.stringify({ contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: file.type, data: base64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 2048 } })
       });
       const data = await resp.json();
       if (data.error) throw new Error(data.error.message);
       const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const ex = JSON.parse(cleaned);
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start === -1 || end === -1) throw new Error("JSON não encontrado na resposta");
+      const ex = JSON.parse(cleaned.slice(start, end + 1));
       const today = new Date().toISOString().split("T")[0];
       const bk = BOOKMAKERS.includes(ex.bookmaker) ? ex.bookmaker : (localStorage.getItem("lastBookmaker") || "Betano");
       if (ex.type === "multiple" && ex.selections?.length >= 2) {
