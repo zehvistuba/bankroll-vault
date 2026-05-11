@@ -139,7 +139,7 @@ Regras:
 - Para apostas simples: selections deve ser []
 - stake: apenas o número decimal (sem R$)
 - odds: odd decimal (ex: 1.85). Para múltiplas é a odd combinada total
-- date: formato YYYY-MM-DD. Se não visível, use a data de hoje
+- date: OBRIGATÓRIO no formato YYYY-MM-DD (ex: 2025-05-11). Procure por data/hora de colocação da aposta na imagem. Se não visível, use null
 - Se um campo não for identificável com segurança, use null`;
 
 function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKeyChange }) {
@@ -617,16 +617,23 @@ export default function BankrollVault() {
       if (start === -1 || end === -1) throw new Error("JSON não encontrado na resposta");
       const ex = JSON.parse(cleaned.slice(start, end + 1));
       const today = new Date().toISOString().split("T")[0];
+      const normalizeDate = (d) => {
+        if (!d) return today;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+        const m = d.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+        if (m) { const y = m[3].length === 2 ? "20" + m[3] : m[3]; return `${y}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
+        return today;
+      };
       const bk = BOOKMAKERS.includes(ex.bookmaker) ? ex.bookmaker : (localStorage.getItem("lastBookmaker") || "Betano");
       if (ex.type === "multiple" && ex.selections?.length >= 2) {
-        setForm(p => ({ ...p, betType: "multiple", bookmaker: bk, date: ex.date || today,
+        setForm(p => ({ ...p, betType: "multiple", bookmaker: bk, date: normalizeDate(ex.date),
           stake: ex.stake != null ? String(ex.stake) : p.stake, result: "pending", closingOdds: "", notes: "",
           selections: ex.selections.map(s => ({ id: Date.now() + Math.random(),
             description: s.description || "", odds: s.odds != null ? String(s.odds) : "",
             sport: SPORTS.includes(s.sport) ? s.sport : "Futebol",
             market: MARKETS.includes(s.market) ? s.market : "1x2" })) }));
       } else {
-        setForm(p => ({ ...p, betType: "simple", bookmaker: bk, date: ex.date || today,
+        setForm(p => ({ ...p, betType: "simple", bookmaker: bk, date: normalizeDate(ex.date),
           description: ex.description || "", odds: ex.odds != null ? String(ex.odds) : "",
           stake: ex.stake != null ? String(ex.stake) : p.stake, result: "pending", closingOdds: "", notes: "",
           sport: SPORTS.includes(ex.sport) ? ex.sport : "Futebol",
