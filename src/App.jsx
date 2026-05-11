@@ -596,17 +596,32 @@ export default function BankrollVault() {
 
 
 
+  const compressImage = (file) => new Promise((res, rej) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 1600;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; } }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      const data = canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
+      res({ base64: data, mimeType: "image/jpeg" });
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+
   const extractFromImage = async (file) => {
     if (!geminiKey) { setExtractError("Configure a API Key do Gemini primeiro em Análise → Inteligência IA."); return; }
     setExtracting(true); setExtractError("");
     try {
-      const base64 = await new Promise((res, rej) => {
-        const r = new FileReader(); r.readAsDataURL(file);
-        r.onload = () => res(r.result.split(",")[1]); r.onerror = rej;
-      });
+      const { base64, mimeType } = await compressImage(file);
       const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: file.type, data: base64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 2048 } })
+        body: JSON.stringify({ contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: mimeType, data: base64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 4096 } })
       });
       const data = await resp.json();
       if (data.error) throw new Error(data.error.message);
