@@ -135,11 +135,15 @@ Formato exato:
 }
 
 Regras:
-- type "multiple" se houver 2 ou mais seleções combinadas, caso contrário "simple"
-- Para apostas simples: selections deve ser []
-- stake: apenas o número decimal (sem R$)
-- odds: odd decimal (ex: 1.85). Para múltiplas é a odd combinada total
-- date: OBRIGATÓRIO no formato YYYY-MM-DD (ex: 2025-05-11). Procure por data/hora de colocação da aposta na imagem. Se não visível, use null
+- type "multiple" somente se houver 2+ seleções de JOGOS DIFERENTES com odds individuais visíveis. Caso contrário use "simple".
+- "Criar Aposta", "Bet Builder", "Aposta Especial" ou múltiplas seleções do MESMO jogo → sempre type "simple", selections = []
+- Para simples: selections = []. Use a odd combinada visível no topo do ticket para o campo "odds"
+- stake: apenas o número decimal sem R$ (ex: 15.00)
+- odds: odd decimal (ex: 1.53). Se a odd não estiver visível diretamente, calcule: ganhos_potenciais ÷ stake (ex: R$22,95 ÷ R$15 = 1.53). "Ganhos Potenciais" e "Retorno Potencial" são a mesma coisa.
+- Para múltiplas reais (jogos diferentes): inclua cada seleção com sua odd individual. Se a odd individual não estiver visível, use null.
+- date: formato YYYY-MM-DD. Procure a data de COLOCAÇÃO da aposta (não a data do evento). Se não visível, use null.
+- bookmaker: use exatamente um destes nomes se reconhecer — Bet365, Betano, Sportingbet, Novibet, Betnacional, Pinnacle, Betfair, KTO. Se for outra casa, use o nome que aparece na imagem.
+- description: para "simple", descreva resumidamente a(s) seleção(ões) (ex: "Osasuna vs Atlético de Madrid — Mais de 2.5 Escanteios 1T + Almada 1+ Chute + Atlético +3 Handicap")
 - Se um campo não for identificável com segurança, use null`;
 
 function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKeyChange }) {
@@ -639,7 +643,16 @@ export default function BankrollVault() {
         if (m) { const y = m[3].length === 2 ? "20" + m[3] : m[3]; return `${y}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
         return today;
       };
-      const bk = BOOKMAKERS.includes(ex.bookmaker) ? ex.bookmaker : (localStorage.getItem("lastBookmaker") || "Betano");
+      const normalizeBookmaker = (name) => {
+        if (!name) return localStorage.getItem("lastBookmaker") || "Betano";
+        const lower = name.toLowerCase().trim();
+        const exact = BOOKMAKERS.find(b => b.toLowerCase() === lower);
+        if (exact) return exact;
+        const partial = BOOKMAKERS.find(b => lower.includes(b.toLowerCase()) || b.toLowerCase().includes(lower));
+        if (partial) return partial;
+        return "Outros";
+      };
+      const bk = normalizeBookmaker(ex.bookmaker);
       if (ex.type === "multiple" && ex.selections?.length >= 2) {
         setForm(p => ({ ...p, betType: "multiple", bookmaker: bk, date: normalizeDate(ex.date),
           stake: ex.stake != null ? String(ex.stake) : p.stake, result: "pending", closingOdds: "", notes: "",
@@ -711,7 +724,18 @@ export default function BankrollVault() {
   const hasSettled = bets.some(b => b.result !== "pending");
   const filteredBets = [...bets]
     .filter(b => historyFilter.result === "all" || b.result === historyFilter.result)
-    .filter(b => !historyFilter.search || b.description.toLowerCase().includes(historyFilter.search.toLowerCase()))
+    .filter(b => {
+      if (!historyFilter.search) return true;
+      const q = historyFilter.search.toLowerCase();
+      return (
+        b.description?.toLowerCase().includes(q) ||
+        b.bookmaker?.toLowerCase().includes(q) ||
+        b.date?.includes(q) ||
+        b.sport?.toLowerCase().includes(q) ||
+        b.market?.toLowerCase().includes(q) ||
+        b.selections?.some(s => s.description?.toLowerCase().includes(q))
+      );
+    })
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const NAV = [
@@ -871,7 +895,8 @@ export default function BankrollVault() {
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>@{bet.odds.toFixed(2)}{bet.type === "multiple" ? " comb." : ""}</div>
-                          <div style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-mono)", marginTop: 4 }}>{fmt(bet.stake)}</div>
+                          <div style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-mono)", marginTop: 2 }}>{fmt(bet.stake)}</div>
+                          <div style={{ fontSize: 11, color: "var(--primary)", fontFamily: "var(--font-mono)", marginTop: 2 }}>ret: {fmt(bet.stake * bet.odds)}</div>
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 12 }}>
@@ -967,7 +992,17 @@ export default function BankrollVault() {
                       {[["pending","Pendente"],["win","Ganhou"],["loss","Perdeu"],["void","Void"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
                   </div>
+                  <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                    <span className="form-label">NOTAS — opcional</span>
+                    <input type="text" placeholder="Raciocínio da aposta, contexto..." value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className="input" />
+                  </div>
                 </div>
+                {form.odds && form.stake && parseFloat(form.odds) > 1 && parseFloat(form.stake) > 0 && (
+                  <div style={{ marginTop: 4, marginBottom: 8, padding: "10px 14px", background: "rgba(0,212,138,0.06)", borderRadius: 8, border: "1px solid rgba(0,212,138,0.15)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>Retorno potencial</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--primary)", fontFamily: "var(--font-mono)" }}>{fmt(parseFloat(form.stake) * parseFloat(form.odds))}</span>
+                  </div>
+                )}
               ) : (
                 <>
                   <div className="grid-2" style={{ marginBottom: 8 }}>
@@ -992,6 +1027,10 @@ export default function BankrollVault() {
                     <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                       <span className="form-label">ODDS DE FECHAMENTO (CLV) — opcional</span>
                       <input type="number" placeholder="Odd combinada final no fechamento" step="0.01" value={form.closingOdds} onChange={e => setForm(p => ({ ...p, closingOdds: e.target.value }))} className="input" />
+                    </div>
+                    <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                      <span className="form-label">NOTAS — opcional</span>
+                      <input type="text" placeholder="Raciocínio da aposta, contexto..." value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className="input" />
                     </div>
                   </div>
 
@@ -1056,7 +1095,7 @@ export default function BankrollVault() {
                 </div>
                 <div style={{ position: "relative" }}>
                   <Search size={14} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none" }} />
-                  <input type="text" placeholder="Buscar por descrição..." value={historyFilter.search} onChange={e => setHistoryFilter(f => ({ ...f, search: e.target.value }))} className="input" style={{ paddingLeft: 38, paddingTop: 12, paddingBottom: 12, fontSize: 13 }} />
+                  <input type="text" placeholder="Buscar por descrição, casa, esporte, data..." value={historyFilter.search} onChange={e => setHistoryFilter(f => ({ ...f, search: e.target.value }))} className="input" style={{ paddingLeft: 38, paddingTop: 12, paddingBottom: 12, fontSize: 13 }} />
                   {historyFilter.search && <button onClick={() => setHistoryFilter(f => ({ ...f, search: "" }))} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 4, display: "flex" }}><X size={14} /></button>}
                 </div>
               </div>
@@ -1092,8 +1131,10 @@ export default function BankrollVault() {
                           <span className="bet-stat" style={{ color: "var(--accent)", fontWeight: 700 }}>@{bet.odds.toFixed(2)}{bet.type === "multiple" ? " comb." : ""}</span>
                           <span className="bet-stat" style={{ color: "var(--text)" }}>{fmt(bet.stake)}</span>
                           {bet.result !== "pending" && <span className="bet-stat" style={{ color: pl >= 0 ? "var(--primary)" : "var(--danger)", fontWeight: 700 }}>P&L: {pl >= 0 ? "+" : ""}{fmt(Math.abs(pl))}</span>}
+                          {bet.result === "pending" && <span className="bet-stat" style={{ color: "var(--muted)" }}>Ret: {fmt(bet.stake * bet.odds)}</span>}
                           {clv != null && <span className="bet-stat" style={{ color: clv >= 0 ? "var(--primary)" : "var(--danger)", fontWeight: 700 }}>CLV: {clv >= 0 ? "+" : ""}{clv.toFixed(1)}%</span>}
                         </div>
+                        {bet.notes && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)", fontStyle: "italic", borderTop: "1px solid var(--border)", paddingTop: 8 }}>"{bet.notes}"</div>}
                       </div>
                       <div style={{ display: "flex", gap: 2, flexShrink: 0, alignItems: "flex-start" }}>
                         {deletingId !== bet.id && (
