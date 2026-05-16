@@ -641,6 +641,23 @@ export default function BankrollVault() {
     }
   }, [user]);
 
+  const stats = useMemo(() => {
+    const sorted = [...bets].sort((a, b) => a.date.localeCompare(b.date));
+    let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
+    const chartData = [{ d: "Início", v: config.initialBankroll }];
+    sorted.forEach(bet => {
+      const pl = getBetPL(bet); const clv = getCLV(bet);
+      if (bet.result !== "pending") {
+        totalStake += bet.stake; totalPL += pl; bankroll += pl;
+        if (bet.result === "win") wins++;
+        if (bet.result === "loss") losses++;
+        chartData.push({ d: bet.date.slice(5), v: Math.round(bankroll * 100) / 100 });
+      }
+      if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
+    });
+    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: bets.length, chartData };
+  }, [bets, config.initialBankroll]);
+
   const syncPublicProfile = useCallback(async (enabled) => {
     if (!user) return;
     const ref = doc(db, "publicProfiles", user.uid);
@@ -705,23 +722,6 @@ export default function BankrollVault() {
       setAuthInProgress(false);
     }
   };
-
-  const stats = useMemo(() => {
-    const sorted = [...bets].sort((a, b) => a.date.localeCompare(b.date));
-    let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
-    const chartData = [{ d: "Início", v: config.initialBankroll }];
-    sorted.forEach(bet => {
-      const pl = getBetPL(bet); const clv = getCLV(bet);
-      if (bet.result !== "pending") {
-        totalStake += bet.stake; totalPL += pl; bankroll += pl;
-        if (bet.result === "win") wins++;
-        if (bet.result === "loss") losses++;
-        chartData.push({ d: bet.date.slice(5), v: Math.round(bankroll * 100) / 100 });
-      }
-      if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
-    });
-    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: bets.length, chartData };
-  }, [bets, config.initialBankroll]);
 
   useEffect(() => {
     if (!loaded) return;
