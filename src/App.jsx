@@ -752,6 +752,56 @@ export default function BankrollVault() {
     return { fraction: f * 100, amount: f * br, hasValue: f > 0 };
   }, [kellyForm, stats.currentBankroll]);
 
+  const monthlyData = useMemo(() => {
+    const months = {};
+    bets.filter(b => b.result !== "pending" && b.date).forEach(bet => {
+      const m = bet.date.slice(0, 7);
+      if (!months[m]) months[m] = { month: m, pl: 0, stake: 0 };
+      months[m].pl += getBetPL(bet);
+      months[m].stake += bet.stake;
+    });
+    return Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).slice(-12).map(m => ({
+      ...m,
+      label: new Date(m.month + "-15").toLocaleString("pt-BR", { month: "short" }).replace(".", "") + "/" + m.month.slice(2, 4),
+    }));
+  }, [bets]);
+
+  const currentStreak = useMemo(() => {
+    const settled = bets.filter(b => b.result === "win" || b.result === "loss").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    if (!settled.length) return null;
+    const type = settled[0].result;
+    let count = 0;
+    for (const b of settled) { if (b.result === type) count++; else break; }
+    return { type, count };
+  }, [bets]);
+
+  const pendingExposure = useMemo(() => bets.filter(b => b.result === "pending").reduce((s, b) => s + (b.stake || 0), 0), [bets]);
+
+  const formEV = useMemo(() => {
+    const p = parseFloat(form.prob) / 100;
+    const o = parseFloat(form.odds);
+    if (!p || !o || p <= 0 || p >= 1 || o <= 1) return null;
+    const ev = p * (o - 1) - (1 - p);
+    return { ev, pct: (ev * 100).toFixed(2), positive: ev > 0 };
+  }, [form.prob, form.odds]);
+
+  const thisMonthPL = useMemo(() => {
+    const m = new Date().toISOString().slice(0, 7);
+    return monthlyData.find(d => d.month === m)?.pl ?? null;
+  }, [monthlyData]);
+
+  const calendarDays = useMemo(() => {
+    const { year, month } = calendarDate;
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = Array(firstWeekday).fill(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      cells.push({ day: d, date: dateStr, bets: bets.filter(b => b.date === dateStr) });
+    }
+    return cells;
+  }, [bets, calendarDate]);
+
   if (tipsterUID && tipsterProfile && tipsterUID !== user?.uid) return (
     <div style={{ display: "flex", width: "100%", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: 20, flexDirection: "column", gap: 20 }}>
       <div className="card animate-fade-in" style={{ maxWidth: 480, width: "100%", padding: "40px 32px" }}>
@@ -979,55 +1029,6 @@ export default function BankrollVault() {
   const pending = bets.filter(b => b.result === "pending");
   const hasSettled = bets.some(b => b.result !== "pending");
 
-  const monthlyData = useMemo(() => {
-    const months = {};
-    bets.filter(b => b.result !== "pending" && b.date).forEach(bet => {
-      const m = bet.date.slice(0, 7);
-      if (!months[m]) months[m] = { month: m, pl: 0, stake: 0 };
-      months[m].pl += getBetPL(bet);
-      months[m].stake += bet.stake;
-    });
-    return Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).slice(-12).map(m => ({
-      ...m,
-      label: new Date(m.month + "-15").toLocaleString("pt-BR", { month: "short" }).replace(".", "") + "/" + m.month.slice(2, 4),
-    }));
-  }, [bets]);
-
-  const currentStreak = useMemo(() => {
-    const settled = bets.filter(b => b.result === "win" || b.result === "loss").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-    if (!settled.length) return null;
-    const type = settled[0].result;
-    let count = 0;
-    for (const b of settled) { if (b.result === type) count++; else break; }
-    return { type, count };
-  }, [bets]);
-
-  const pendingExposure = useMemo(() => bets.filter(b => b.result === "pending").reduce((s, b) => s + (b.stake || 0), 0), [bets]);
-
-  const formEV = useMemo(() => {
-    const p = parseFloat(form.prob) / 100;
-    const o = parseFloat(form.odds);
-    if (!p || !o || p <= 0 || p >= 1 || o <= 1) return null;
-    const ev = p * (o - 1) - (1 - p);
-    return { ev, pct: (ev * 100).toFixed(2), positive: ev > 0 };
-  }, [form.prob, form.odds]);
-
-  const thisMonthPL = useMemo(() => {
-    const m = new Date().toISOString().slice(0, 7);
-    return monthlyData.find(d => d.month === m)?.pl ?? null;
-  }, [monthlyData]);
-
-  const calendarDays = useMemo(() => {
-    const { year, month } = calendarDate;
-    const firstWeekday = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const cells = Array(firstWeekday).fill(null);
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      cells.push({ day: d, date: dateStr, bets: bets.filter(b => b.date === dateStr) });
-    }
-    return cells;
-  }, [bets, calendarDate]);
 
   const shareBet = async (bet) => {
     const pl = getBetPL(bet);
