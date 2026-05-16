@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, onSnapshot, collection, deleteDoc, writeBatch } from "firebase/firestore";
@@ -414,6 +414,11 @@ export default function BankrollVault() {
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
   const imageInputRef = useRef(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+  const [milestoneToast, setMilestoneToast] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [calendarDate, setCalendarDate] = useState(() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; });
+  const [calendarDay, setCalendarDay] = useState(null);
 
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
@@ -467,6 +472,12 @@ export default function BankrollVault() {
 
     return () => { unsubDoc(); unsubBets(); };
   }, [user]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
 
   const saveConfig = useCallback(async (newConfig) => {
     setConfig(newConfig);
@@ -553,6 +564,19 @@ export default function BankrollVault() {
     });
     return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: bets.length, chartData };
   }, [bets, config.initialBankroll]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    const settled = bets.some(b => b.result !== "pending");
+    if (!settled) return;
+    const MILESTONES = [10, 25, 50, 100, 200];
+    const shown = config.shownMilestones || [];
+    const next = MILESTONES.find(m => stats.roi >= m && !shown.includes(m));
+    if (next) {
+      setMilestoneToast(next);
+      saveConfig({ ...config, shownMilestones: [...shown, next] });
+    }
+  }, [stats.roi, loaded]);
 
   const marketSeg = useMemo(() => buildSegments(bets, "market"), [bets]);
   const bookSeg = useMemo(() => buildSegments(bets, "bookmaker"), [bets]);
@@ -794,6 +818,34 @@ export default function BankrollVault() {
     return monthlyData.find(d => d.month === m)?.pl ?? null;
   }, [monthlyData]);
 
+  const calendarDays = useMemo(() => {
+    const { year, month } = calendarDate;
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = Array(firstWeekday).fill(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      cells.push({ day: d, date: dateStr, bets: bets.filter(b => b.date === dateStr) });
+    }
+    return cells;
+  }, [bets, calendarDate]);
+
+  const shareBet = async (bet) => {
+    const pl = getBetPL(bet);
+    const lines = [
+      `🎯 *Banca Lógica* — ${bet.bookmaker}`,
+      `📅 ${bet.date}`,
+      `⚽ ${bet.description}`,
+      `📊 @${bet.odds?.toFixed(2)} | ${fmt(bet.stake)}`,
+      bet.result === "win" ? `✅ Green: +${fmt(pl)}` : bet.result === "loss" ? `❌ Red: -${fmt(Math.abs(pl))}` : `⏳ Pendente`,
+    ];
+    const text = lines.join("\n");
+    try {
+      if (navigator.share) { await navigator.share({ text }); }
+      else { await navigator.clipboard.writeText(text); setCopiedId(bet.id); setTimeout(() => setCopiedId(null), 2000); }
+    } catch (_) {}
+  };
+
   const exportCSV = () => {
     const headers = ["Data","Tipo","Descrição","Casa","Esporte","Mercado","Odds","Stake","Resultado","P&L","CLV","Notas"];
     const rows = filteredBets.map(b => {
@@ -860,7 +912,15 @@ export default function BankrollVault() {
         </div>
         {NAV.map(({ id, icon: Icon, label }) => (
           <button key={id} className={`nav-btn ${view === id ? "active" : ""}`} onClick={() => setView(id)}>
-            <Icon size={20} /><span className="nav-label">{label}</span>
+            <div style={{ position: "relative" }}>
+              <Icon size={20} />
+              {id === "dashboard" && pending.length > 0 && (
+                <span style={{ position: "absolute", top: -5, right: -8, background: "var(--accent)", color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: "50%", minWidth: 15, height: 15, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-mono)", padding: "0 3px", lineHeight: 1 }}>
+                  {pending.length > 9 ? "9+" : pending.length}
+                </span>
+              )}
+            </div>
+            <span className="nav-label">{label}</span>
           </button>
         ))}
         <div className="sidebar-user">
@@ -889,11 +949,14 @@ export default function BankrollVault() {
               Olá, {userDisplayName.split(" ")[0] || ""}!
             </span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <BalanceDisplay
               value={stats.currentBankroll}
               onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; saveConfig(nc); }}
             />
+            <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="Alternar tema" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }}>
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
             <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
               <LogOut size={16} />
             </button>
@@ -910,8 +973,11 @@ export default function BankrollVault() {
         <div className="main-content">
           <div className="desktop-header-info" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
             <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text)" }}>{NAV.find(n => n.id === view)?.label}</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <BalanceDisplay value={stats.currentBankroll} onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; saveConfig(nc); }} />
+              <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="Alternar tema" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }}>
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
               <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
                 <LogOut size={16} />
               </button>
@@ -1363,6 +1429,11 @@ export default function BankrollVault() {
                       </div>
                       <div style={{ display: "flex", gap: 2, flexShrink: 0, alignItems: "flex-start" }}>
                         {deletingId !== bet.id && (
+                          <button onClick={() => shareBet(bet)} title={copiedId === bet.id ? "Copiado!" : "Compartilhar aposta"} style={{ background: "transparent", border: "none", color: copiedId === bet.id ? "var(--primary)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (copiedId !== bet.id) e.currentTarget.style.color = "var(--primary)"; }} onMouseOut={e => { if (copiedId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
+                            {copiedId === bet.id ? <Check size={15} /> : <Share2 size={15} />}
+                          </button>
+                        )}
+                        {deletingId !== bet.id && (
                           <button onClick={() => startEdit(bet)} title="Editar aposta" style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex" }} onMouseOver={e => e.currentTarget.style.color = "var(--accent)"} onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}><Edit2 size={15} /></button>
                         )}
                         {deletingId === bet.id ? (
@@ -1402,11 +1473,80 @@ export default function BankrollVault() {
                     {tabBtn("market", "Mercados")}
                     {tabBtn("bookmaker", "Casas de Aposta")}
                     {tabBtn("sport", "Esportes")}
+                    {tabBtn("calendar", "Calendário")}
                   </div>
                   {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
                   {analyzeTab === "market" && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="PERFORMANCE POR MERCADO" data={marketSeg} /></>}
                   {analyzeTab === "bookmaker" && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="PERFORMANCE POR CASA DE APOSTA" data={bookSeg} /></>}
                   {analyzeTab === "sport" && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="PERFORMANCE POR ESPORTE" data={sportSeg} /></>}
+                  {analyzeTab === "calendar" && (
+                    <div className="card">
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                        <button onClick={() => setCalendarDate(d => { const p = new Date(d.year, d.month - 1, 1); return { year: p.getFullYear(), month: p.getMonth() }; })} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, display: "flex", borderRadius: 6, transition: "color 0.2s" }} onMouseOver={e => e.currentTarget.style.color = "var(--text)"} onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}>
+                          <ChevronLeft size={20} />
+                        </button>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", textTransform: "capitalize" }}>
+                          {new Date(calendarDate.year, calendarDate.month, 15).toLocaleString("pt-BR", { month: "long", year: "numeric" })}
+                        </span>
+                        <button onClick={() => setCalendarDate(d => { const n = new Date(d.year, d.month + 1, 1); return { year: n.getFullYear(), month: n.getMonth() }; })} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: 8, display: "flex", borderRadius: 6, transition: "color 0.2s" }} onMouseOver={e => e.currentTarget.style.color = "var(--text)"} onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}>
+                          <ChevronRight size={20} />
+                        </button>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
+                        {["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(d => (
+                          <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: "var(--muted)", padding: "6px 0", letterSpacing: 1 }}>{d}</div>
+                        ))}
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+                        {calendarDays.map((cell, i) => {
+                          if (!cell) return <div key={i} />;
+                          const hasBets = cell.bets.length > 0;
+                          const hasWin = cell.bets.some(b => b.result === "win");
+                          const hasLoss = cell.bets.some(b => b.result === "loss");
+                          const hasPending = cell.bets.some(b => b.result === "pending");
+                          const dotColor = hasWin && !hasLoss ? "var(--primary)" : hasLoss && !hasWin ? "var(--danger)" : hasPending ? "var(--accent)" : hasBets ? "var(--muted)" : "transparent";
+                          const isSelected = calendarDay === cell.date;
+                          return (
+                            <div key={i} onClick={() => setCalendarDay(isSelected ? null : cell.date)}
+                              style={{ textAlign: "center", padding: "8px 2px", borderRadius: 8, cursor: hasBets ? "pointer" : "default", background: isSelected ? "rgba(0,212,138,0.12)" : hasBets ? "rgba(255,255,255,0.04)" : "transparent", border: `1px solid ${isSelected ? "rgba(0,212,138,0.5)" : hasBets ? "var(--border)" : "transparent"}`, transition: "all 0.15s" }}>
+                              <div style={{ fontSize: 13, fontWeight: isSelected ? 700 : 500, color: hasBets ? "var(--text)" : "var(--muted)", marginBottom: 4 }}>{cell.day}</div>
+                              {hasBets && <div style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, margin: "0 auto" }} />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {calendarDay && (() => {
+                        const dayBets = bets.filter(b => b.date === calendarDay);
+                        if (!dayBets.length) return null;
+                        const dayPL = dayBets.filter(b => b.result !== "pending").reduce((s, b) => s + getBetPL(b), 0);
+                        return (
+                          <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 2, textTransform: "uppercase" }}><CalendarDays size={12} style={{ marginRight: 6, verticalAlign: "middle" }} />{calendarDay}</span>
+                              <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "var(--font-mono)", color: dayPL >= 0 ? "var(--primary)" : "var(--danger)" }}>{dayPL >= 0 ? "+" : ""}{fmt(dayPL)}</span>
+                            </div>
+                            {dayBets.map(b => {
+                              const [rl, rc] = RESULT_MAP[b.result] || ["?","muted"];
+                              return (
+                                <div key={b.id} style={{ padding: "12px 0", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ marginBottom: 3 }}>
+                                      <span className={`badge ${rc}`}>{rl}</span>
+                                      <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{b.description}</span>
+                                    </div>
+                                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{b.bookmaker} · @{b.odds?.toFixed(2)} · {fmt(b.stake)}</div>
+                                  </div>
+                                  <div style={{ fontSize: 13, fontFamily: "var(--font-mono)", fontWeight: 700, color: getBetPL(b) >= 0 ? "var(--primary)" : "var(--danger)", flexShrink: 0 }}>
+                                    {b.result === "pending" ? "⏳" : `${getBetPL(b) >= 0 ? "+" : ""}${fmt(Math.abs(getBetPL(b)))}`}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </>
               )}
             </div>}
@@ -1461,6 +1601,18 @@ export default function BankrollVault() {
           </div>
         </div>
       </div>
+
+      {milestoneToast && (
+        <div className="animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }} onClick={() => setMilestoneToast(null)}>
+          <div style={{ background: "var(--bg-secondary)", border: "1px solid rgba(0,212,138,0.4)", borderRadius: 20, padding: "40px 32px", textAlign: "center", maxWidth: 340, width: "100%", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 52, marginBottom: 12 }}>🏆</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: "var(--primary)", fontFamily: "var(--font-mono)", marginBottom: 8 }}>+{milestoneToast}% ROI</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Marco atingido!</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.7, marginBottom: 24 }}>Você atingiu um ROI de <strong style={{ color: "var(--primary)" }}>{milestoneToast}%</strong>. Consistência e edge positivo são a chave do sucesso a longo prazo.</div>
+            <button onClick={() => setMilestoneToast(null)} style={{ background: "var(--primary)", color: "#000", border: "none", borderRadius: 10, padding: "12px 32px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)", transition: "all 0.2s ease" }}>CONTINUAR</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
