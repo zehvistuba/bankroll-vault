@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy, Users, ImageDown, Globe } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy, Users, ImageDown, Globe, Eye, EyeOff, AlertTriangle } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
-import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
+import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
@@ -524,6 +524,8 @@ export default function BankrollVault() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authInProgress, setAuthInProgress] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
   const [syncError, setSyncError] = useState("");
   const [userDisplayName, setUserDisplayName] = useState("");
   const [deletingId, setDeletingId] = useState(null);
@@ -686,22 +688,48 @@ export default function BankrollVault() {
     finally { setLeaderboardLoading(false); }
   }, []);
 
+  const handleLogout = async () => {
+    setIsRegistering(false);
+    setEmail(""); setPassword(""); setNome("");
+    setAuthError(""); setAuthInProgress(false);
+    setForgotPasswordSent(false);
+    await signOut(auth);
+  };
+
   const handleGoogleLogin = async () => {
     try {
       setAuthInProgress(true);
       setAuthError("");
-      await signInWithPopup(auth, googleProvider); 
-    } catch (err) { 
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
       setAuthInProgress(false);
-      if (err.code !== "auth/popup-closed-by-user") {
-        setAuthError("Erro ao tentar fazer login com Google: " + err.message);
+      if (err.code === "auth/popup-blocked") {
+        setAuthError("Popup bloqueado pelo navegador. Autorize popups para este site e tente novamente.");
+      } else if (err.code !== "auth/popup-closed-by-user") {
+        setAuthError("Erro ao fazer login com Google: " + err.message);
       }
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) { setAuthError("Digite seu e-mail acima para recuperar a senha."); return; }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setForgotPasswordSent(true);
+      setAuthError("");
+    } catch (err) {
+      if (err.code === "auth/user-not-found") setAuthError("Nenhuma conta encontrada com este e-mail.");
+      else setAuthError("Erro ao enviar email de recuperação: " + err.message);
     }
   };
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();
     setAuthError("");
+    if (isRegistering && password.length < 6) {
+      setAuthError("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
     setAuthInProgress(true);
     try {
       if (isRegistering) {
@@ -869,18 +897,32 @@ export default function BankrollVault() {
             </div>
             <div className="form-group">
               <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Lock size={12}/> SENHA</span>
-              <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="input" placeholder="••••••••" minLength={6} />
+              <div style={{ position: "relative" }}>
+                <input type={showPassword ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)} className="input" placeholder="••••••••" style={{ paddingRight: 40 }} />
+                <button type="button" onClick={() => setShowPassword(v => !v)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 4, display: "flex" }}>
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
+
+            {!isRegistering && (
+              <div style={{ textAlign: "right", marginTop: -8, marginBottom: 12 }}>
+                {forgotPasswordSent
+                  ? <span style={{ color: "var(--primary)", fontSize: 12 }}>✓ Email de recuperação enviado!</span>
+                  : <button type="button" onClick={handleForgotPassword} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", padding: 0 }}>Esqueceu a senha?</button>
+                }
+              </div>
+            )}
 
             {authError && <div style={{ color: "var(--danger)", fontSize: 13, marginBottom: 16, background: "rgba(255,61,90,0.1)", padding: 10, borderRadius: 6, lineHeight: 1.5, border: "1px solid rgba(255,61,90,0.3)" }}>{authError}</div>}
 
             <button type="submit" disabled={authInProgress} style={{ width: "100%", background: "var(--primary)", color: "#000", border: "none", padding: "14px", borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: authInProgress ? "not-allowed" : "pointer", opacity: authInProgress ? 0.7 : 1, transition: "opacity 0.2s" }}>
               {authInProgress ? "CARREGANDO..." : (isRegistering ? "CRIAR CONTA" : "ENTRAR")}
             </button>
-            
+
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
               <span style={{ color: "var(--muted)" }}>{isRegistering ? "Já tem conta?" : "Não tem conta?"} </span>
-              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); setNome(""); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); setNome(""); setForgotPasswordSent(false); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
                 {isRegistering ? "Faça login" : "Cadastre-se"}
               </button>
             </div>
@@ -1157,7 +1199,7 @@ export default function BankrollVault() {
             <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="Alternar tema" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }}>
               {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+            <button onClick={handleLogout} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
               <LogOut size={16} />
             </button>
           </div>
@@ -1166,6 +1208,7 @@ export default function BankrollVault() {
         {syncError && (
           <div style={{ background: "rgba(255, 61, 90, 0.1)", borderBottom: "1px solid rgba(255, 61, 90, 0.3)", color: "var(--danger)", padding: "12px 20px", fontSize: 13, display: "flex", justifyContent: "center", alignItems: "center", gap: 8 }}>
             <Info size={16} /> {syncError}
+            <button onClick={() => setSyncError("")} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 4, display: "flex" }}><X size={14} /></button>
           </div>
         )}
 
@@ -1178,7 +1221,7 @@ export default function BankrollVault() {
               <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="Alternar tema" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }}>
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </button>
-              <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+              <button onClick={handleLogout} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
                 <LogOut size={16} />
               </button>
             </div>
@@ -1202,7 +1245,7 @@ export default function BankrollVault() {
                 {[{ label: "APOSTAS", val: stats.totalBets, color: "text" }, 
                   { label: "VITÓRIAS", val: stats.wins, color: "g" }, 
                   { label: "DERROTAS", val: stats.losses, color: "r" }, 
-                  { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : ""}R$${Math.round(stats.totalPL)}`, color: stats.totalPL >= 0 ? "g" : "r", tip: "Profit & Loss. O seu resultado financeiro bruto em Reais." }].map(k => (
+                  { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : ""}${fmt(Math.abs(stats.totalPL))}`, color: stats.totalPL >= 0 ? "g" : "r", tip: "Profit & Loss. O seu resultado financeiro bruto em Reais." }].map(k => (
                   <div key={k.label} className="card" style={{ padding: "16px" }}>
                     <span className="kpi-label" style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: '4px' }}>{k.label} {k.tip && <InfoTooltip text={k.tip} />}</span>
                     <div className={`kpi-value ${k.color}`} style={{ fontSize: 20 }}>{k.val}</div>
@@ -1449,6 +1492,14 @@ export default function BankrollVault() {
                   <div className="form-group">
                     <span className="form-label">STAKE (R$)</span>
                     <input type="number" placeholder="100.00" step="any" value={form.stake} onChange={e => setForm(p => ({ ...p, stake: e.target.value }))} className="input" />
+                    {form.stake && parseFloat(form.stake) > stats.currentBankroll * 0.2 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12, color: "#f59e0b" }}>
+                        <AlertTriangle size={13} />
+                        {parseFloat(form.stake) > stats.currentBankroll
+                          ? `Stake maior que sua banca atual (${fmt(stats.currentBankroll)}).`
+                          : `Stake representa ${((parseFloat(form.stake) / stats.currentBankroll) * 100).toFixed(0)}% da banca — acima de 20%.`}
+                      </div>
+                    )}
                   </div>
                   <div className="form-group">
                     <span className="form-label">ODDS</span>
@@ -1699,25 +1750,25 @@ export default function BankrollVault() {
             {/* ANÁLISE */}
             {view === "analyze" && <div style={{ maxWidth: 1000, margin: "0 auto" }}>
               <span className="section-title" style={{ marginBottom: 24 }}>ANÁLISE DE PERFORMANCE</span>
-              {!hasSettled ? (
-                <div className="empty-state">
-                  <BarChart2 size={48} style={{ marginBottom: 16, color: "var(--border)", margin: "0 auto" }} />
-                  <div style={{ fontSize: 16, fontWeight: 500 }}>Registre apostas liquidadas para ver a análise avançada.</div>
+              <>
+                <div style={{ display: "flex", gap: 12, marginBottom: 24, overflowX: "auto", paddingBottom: 8 }}>
+                  {tabBtn("ia", "Inteligência IA")}
+                  {hasSettled && tabBtn("market", "Mercados")}
+                  {hasSettled && tabBtn("bookmaker", "Casas de Aposta")}
+                  {hasSettled && tabBtn("sport", "Esportes")}
+                  {tabBtn("calendar", "Calendário")}
+                  {tabBtn("community", "Comunidade")}
                 </div>
-              ) : (
-                <>
-                  <div style={{ display: "flex", gap: 12, marginBottom: 24, overflowX: "auto", paddingBottom: 8 }}>
-                    {tabBtn("ia", "Inteligência IA")}
-                    {tabBtn("market", "Mercados")}
-                    {tabBtn("bookmaker", "Casas de Aposta")}
-                    {tabBtn("sport", "Esportes")}
-                    {tabBtn("calendar", "Calendário")}
-                    {tabBtn("community", "Comunidade")}
+                {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
+                {(analyzeTab === "market" || analyzeTab === "bookmaker" || analyzeTab === "sport") && !hasSettled && (
+                  <div className="empty-state">
+                    <BarChart2 size={48} style={{ marginBottom: 16, color: "var(--border)", margin: "0 auto" }} />
+                    <div style={{ fontSize: 16, fontWeight: 500 }}>Registre apostas liquidadas para ver os gráficos de performance.</div>
                   </div>
-                  {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
-                  {analyzeTab === "market" && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="PERFORMANCE POR MERCADO" data={marketSeg} /></>}
-                  {analyzeTab === "bookmaker" && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="PERFORMANCE POR CASA DE APOSTA" data={bookSeg} /></>}
-                  {analyzeTab === "sport" && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="PERFORMANCE POR ESPORTE" data={sportSeg} /></>}
+                )}
+                {analyzeTab === "market" && hasSettled && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="PERFORMANCE POR MERCADO" data={marketSeg} /></>}
+                {analyzeTab === "bookmaker" && hasSettled && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="PERFORMANCE POR CASA DE APOSTA" data={bookSeg} /></>}
+                {analyzeTab === "sport" && hasSettled && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="PERFORMANCE POR ESPORTE" data={sportSeg} /></>}
                   {analyzeTab === "calendar" && (
                     <div className="card">
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
@@ -1851,7 +1902,6 @@ export default function BankrollVault() {
                     </div>
                   )}
                 </>
-              )}
             </div>}
 
             {/* KELLY */}
@@ -1880,6 +1930,17 @@ export default function BankrollVault() {
                 <span className="form-label">BANKROLL ATUAL (R$) — vazio = usa saldo total</span>
                 <input type="number" placeholder={stats.currentBankroll.toFixed(2)} value={kellyForm.bankroll} onChange={e => setKellyForm(p => ({ ...p, bankroll: e.target.value }))} className="input" />
               </div>
+
+              {kellyForm.prob && (parseFloat(kellyForm.prob) <= 0 || parseFloat(kellyForm.prob) >= 100) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#f59e0b", fontSize: 13, marginBottom: 16 }}>
+                  <AlertTriangle size={15} /> Probabilidade deve ser entre 1% e 99%.
+                </div>
+              )}
+              {kellyForm.odds && parseFloat(kellyForm.odds) <= 1 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#f59e0b", fontSize: 13, marginBottom: 16 }}>
+                  <AlertTriangle size={15} /> Odds devem ser maiores que 1.00 para haver valor positivo.
+                </div>
+              )}
 
               {kellyResult && (
                 <div className="card animate-fade-in" style={{ background: kellyResult.hasValue ? "linear-gradient(180deg, rgba(0,212,138,0.08) 0%, transparent 100%)" : "linear-gradient(180deg, rgba(255,61,90,0.08) 0%, transparent 100%)", borderColor: kellyResult.hasValue ? "rgba(0,212,138,0.3)" : "rgba(255,61,90,0.3)", padding: "24px" }}>
