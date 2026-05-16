@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy, Users, ImageDown, Globe } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
-import { doc, setDoc, onSnapshot, collection, deleteDoc, writeBatch } from "firebase/firestore";
+import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
 const BOOKMAKERS = ["Bet365", "Betano", "Sportingbet", "Novibet", "Betnacional", "Pinnacle", "Betfair", "KTO", "Outros"];
@@ -15,6 +15,124 @@ const getCLV = (bet) => bet.closingOdds ? ((bet.odds - bet.closingOdds) / bet.cl
 const RESULT_MAP = { win: ["W", "g"], loss: ["L", "r"], void: ["V", "muted"], pending: ["?", "acc"] };
 const defaultSelection = () => ({ id: crypto.randomUUID(), description: "", sport: "Futebol", market: "1x2", odds: "" });
 const defaultForm = () => ({ date: new Date().toISOString().split("T")[0], betType: "simple", sport: "Futebol", market: "1x2", bookmaker: localStorage.getItem("lastBookmaker") || "Bet365", description: "", odds: "", closingOdds: "", stake: "", result: "pending", notes: "", prob: "", selections: [defaultSelection(), defaultSelection()] });
+
+const shareAsImage = async (canvas, filename) => {
+  return new Promise(resolve => {
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], filename, { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "Banca Lógica" }); } catch (_) {}
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      }
+      resolve();
+    }, "image/png");
+  });
+};
+
+const generateBetCard = async (bet) => {
+  await document.fonts.ready;
+  const W = 600, H = 320;
+  const canvas = document.createElement("canvas");
+  canvas.width = W * 2; canvas.height = H * 2;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(2, 2);
+  const pl = getBetPL(bet);
+  const rc = bet.result === "win" ? "#00d48a" : bet.result === "loss" ? "#ff3d5a" : "#8b7ff5";
+  const rl = bet.result === "win" ? "GREEN ✓" : bet.result === "loss" ? "RED ✗" : "PENDENTE";
+
+  ctx.fillStyle = "#07070e"; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(80, H / 2, 0, 80, H / 2, 200);
+  g.addColorStop(0, rc + "28"); g.addColorStop(1, "transparent");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = rc; ctx.fillRect(0, 0, 4, H);
+  ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+  ctx.fillStyle = "#808098"; ctx.font = "600 10px monospace"; ctx.fillText("BANCA LÓGICA", 20, 32);
+  ctx.fillStyle = rc; ctx.font = "700 12px monospace";
+  ctx.fillText(rl, W - 20 - ctx.measureText(rl).width, 32);
+  ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(20, 44, W - 40, 1);
+
+  const desc = bet.description || "—"; const d2 = desc.length > 55 ? desc.slice(0, 55) + "…" : desc;
+  ctx.fillStyle = "#e4e4f0"; ctx.font = "bold 17px system-ui,sans-serif"; ctx.fillText(d2, 20, 84);
+  ctx.fillStyle = "#808098"; ctx.font = "13px system-ui,sans-serif";
+  const meta = [bet.bookmaker, bet.date, bet.type !== "multiple" && bet.sport, bet.type !== "multiple" && bet.market].filter(Boolean).join(" · ");
+  ctx.fillText(meta, 20, 108);
+  ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(20, 124, W - 40, 1);
+
+  ctx.fillStyle = "#8b7ff5"; ctx.font = "bold 28px monospace"; ctx.fillText(`@${bet.odds?.toFixed(2)}`, 20, 172);
+  ctx.fillStyle = "#808098"; ctx.font = "13px monospace"; ctx.fillText(`Stake: ${fmt(bet.stake)}`, 20, 196);
+
+  if (bet.result !== "pending") {
+    ctx.fillStyle = rc; ctx.font = "bold 24px monospace";
+    const pt = `${pl >= 0 ? "+" : ""}${fmt(Math.abs(pl))}`;
+    ctx.fillText(pt, W - 20 - ctx.measureText(pt).width, 172);
+    ctx.fillStyle = "#808098"; ctx.font = "10px monospace";
+    const lb = pl >= 0 ? "LUCRO" : "PREJUÍZO";
+    ctx.fillText(lb, W - 20 - ctx.measureText(lb).width, 190);
+  } else {
+    ctx.fillStyle = "#8b7ff5"; ctx.font = "bold 18px monospace";
+    const rt = `Ret: ${fmt(bet.stake * bet.odds)}`;
+    ctx.fillText(rt, W - 20 - ctx.measureText(rt).width, 172);
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(20, H - 46, W - 40, 1);
+  ctx.fillStyle = "rgba(128,128,152,0.5)"; ctx.font = "10px monospace";
+  ctx.fillText("banca-logica.pages.dev", 20, H - 22);
+  const dt = new Date().toLocaleDateString("pt-BR");
+  ctx.fillText(dt, W - 20 - ctx.measureText(dt).width, H - 22);
+  return canvas;
+};
+
+const generateStatsCard = async (st, name) => {
+  await document.fonts.ready;
+  const W = 600, H = 360;
+  const canvas = document.createElement("canvas");
+  canvas.width = W * 2; canvas.height = H * 2;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(2, 2);
+  const rc = st.roi >= 0 ? "#00d48a" : "#ff3d5a";
+
+  ctx.fillStyle = "#07070e"; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, 280);
+  g.addColorStop(0, rc + "18"); g.addColorStop(1, "transparent");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = rc; ctx.fillRect(0, 0, 4, H);
+  ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+  ctx.fillStyle = "#808098"; ctx.font = "600 10px monospace"; ctx.fillText("BANCA LÓGICA", 20, 34);
+  if (name) { const nw = ctx.measureText(name).width; ctx.fillText(name, W - 20 - nw, 34); }
+  ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(20, 46, W - 40, 1);
+  ctx.fillStyle = "#808098"; ctx.font = "11px monospace"; ctx.fillText("MINHA PERFORMANCE", 20, 74);
+
+  const roiText = `${st.roi >= 0 ? "+" : ""}${st.roi.toFixed(2)}% ROI`;
+  ctx.fillStyle = rc; ctx.font = "bold 44px monospace";
+  ctx.fillText(roiText, W / 2 - ctx.measureText(roiText).width / 2, 152);
+
+  const cols = [
+    { label: "YIELD", v: `${st.yield >= 0 ? "+" : ""}${st.yield.toFixed(2)}%`, c: st.yield >= 0 ? "#00d48a" : "#ff3d5a" },
+    { label: "ACERTO", v: `${st.winRate.toFixed(1)}%`, c: "#e4e4f0" },
+    { label: "P&L TOTAL", v: `${st.totalPL >= 0 ? "+" : ""}R$${Math.round(st.totalPL)}`, c: st.totalPL >= 0 ? "#00d48a" : "#ff3d5a" },
+  ];
+  cols.forEach((col, i) => {
+    const x = 20 + i * (W - 40) / 3;
+    ctx.fillStyle = "#808098"; ctx.font = "9px monospace"; ctx.fillText(col.label, x, 204);
+    ctx.fillStyle = col.c; ctx.font = "bold 18px monospace"; ctx.fillText(col.v, x, 228);
+  });
+
+  ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(20, 252, W - 40, 1);
+  ctx.fillStyle = "#808098"; ctx.font = "12px monospace";
+  ctx.fillText(`${st.totalBets} apostas · ${st.wins}W / ${st.losses}L`, 20, 280);
+
+  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(20, H - 46, W - 40, 1);
+  ctx.fillStyle = "rgba(128,128,152,0.5)"; ctx.font = "10px monospace";
+  ctx.fillText("banca-logica.pages.dev", 20, H - 22);
+  const dt = new Date().toLocaleDateString("pt-BR");
+  ctx.fillText(dt, W - 20 - ctx.measureText(dt).width, H - 22);
+  return canvas;
+};
 
 function buildSegments(bets, key) {
   const map = {};
@@ -419,6 +537,12 @@ export default function BankrollVault() {
   const [copiedId, setCopiedId] = useState(null);
   const [calendarDate, setCalendarDate] = useState(() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; });
   const [calendarDay, setCalendarDay] = useState(null);
+  const [sharingBetId, setSharingBetId] = useState(null);
+  const [sharingStats, setSharingStats] = useState(false);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [tipsterUID] = useState(() => new URLSearchParams(window.location.search).get("tipster"));
+  const [tipsterProfile, setTipsterProfile] = useState(null);
 
   const [bets, setBets] = useState([]);
   const [config, setConfig] = useState({ initialBankroll: 1000 });
@@ -478,6 +602,12 @@ export default function BankrollVault() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (!tipsterUID) return;
+    getDoc(doc(db, "publicProfiles", tipsterUID))
+      .then(snap => { if (snap.exists()) setTipsterProfile(snap.data()); })
+      .catch(() => {});
+  }, [tipsterUID]);
 
   const saveConfig = useCallback(async (newConfig) => {
     setConfig(newConfig);
@@ -511,8 +641,36 @@ export default function BankrollVault() {
     }
   }, [user]);
 
+  const syncPublicProfile = useCallback(async (enabled) => {
+    if (!user) return;
+    const ref = doc(db, "publicProfiles", user.uid);
+    if (!enabled) { try { await deleteDoc(ref); } catch (_) {} return; }
+    const settled = bets.filter(b => b.result !== "pending");
+    try {
+      await setDoc(ref, {
+        uid: user.uid,
+        displayName: userDisplayName || user.email?.split("@")[0] || "Anônimo",
+        roi: stats.roi, yield: stats.yield, winRate: stats.winRate,
+        totalBets: bets.length, settledBets: settled.length,
+        totalPL: stats.totalPL, wins: stats.wins, losses: stats.losses,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      setSyncError("Perfil público requer atualização das regras do Firestore.");
+    }
+  }, [user, bets, stats, userDisplayName]);
+
+  const fetchLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true);
+    try {
+      const snap = await getDocs(query(collection(db, "publicProfiles"), orderBy("roi", "desc"), limit(25)));
+      setLeaderboard(snap.docs.map(d => d.data()));
+    } catch (_) { setLeaderboard([]); }
+    finally { setLeaderboardLoading(false); }
+  }, []);
+
   const handleGoogleLogin = async () => {
-    try { 
+    try {
       setAuthInProgress(true);
       setAuthError("");
       await signInWithPopup(auth, googleProvider); 
@@ -578,6 +736,10 @@ export default function BankrollVault() {
     }
   }, [stats.roi, loaded]);
 
+  useEffect(() => {
+    if (loaded && config.publicProfile && user) syncPublicProfile(true);
+  }, [stats.roi, stats.totalBets, loaded]);
+
   const marketSeg = useMemo(() => buildSegments(bets, "market"), [bets]);
   const bookSeg = useMemo(() => buildSegments(bets, "bookmaker"), [bets]);
   const sportSeg = useMemo(() => buildSegments(bets, "sport"), [bets]);
@@ -589,6 +751,43 @@ export default function BankrollVault() {
     const f = (b * p - (1 - p)) / b;
     return { fraction: f * 100, amount: f * br, hasValue: f > 0 };
   }, [kellyForm, stats.currentBankroll]);
+
+  if (tipsterUID && tipsterProfile && tipsterUID !== user?.uid) return (
+    <div style={{ display: "flex", width: "100%", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: 20, flexDirection: "column", gap: 20 }}>
+      <div className="card animate-fade-in" style={{ maxWidth: 480, width: "100%", padding: "40px 32px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
+          <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), var(--primary))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+            {(tipsterProfile.displayName?.[0] || "?").toUpperCase()}
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>{tipsterProfile.displayName}</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}><Globe size={11} /> Perfil público · Banca Lógica</div>
+          </div>
+        </div>
+
+        <div className="grid-2" style={{ marginBottom: 20 }}>
+          {[{ label: "ROI", v: fmtPct(tipsterProfile.roi), color: tipsterProfile.roi >= 0 ? "var(--primary)" : "var(--danger)" },
+            { label: "YIELD", v: fmtPct(tipsterProfile.yield), color: tipsterProfile.yield >= 0 ? "var(--primary)" : "var(--danger)" },
+            { label: "TAXA DE ACERTO", v: `${tipsterProfile.winRate?.toFixed(1)}%`, color: "var(--text)" },
+            { label: "P&L TOTAL", v: `${tipsterProfile.totalPL >= 0 ? "+" : ""}R$${Math.round(tipsterProfile.totalPL)}`, color: tipsterProfile.totalPL >= 0 ? "var(--primary)" : "var(--danger)" },
+          ].map(k => (
+            <div key={k.label} style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, letterSpacing: 2, marginBottom: 6 }}>{k.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-mono)", color: k.color }}>{k.v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 28, textAlign: "center" }}>
+          {tipsterProfile.settledBets} apostas liquidadas · {tipsterProfile.wins}W / {tipsterProfile.losses}L
+        </div>
+        <div style={{ padding: "16px", background: "rgba(0,212,138,0.06)", border: "1px solid rgba(0,212,138,0.2)", borderRadius: 10, textAlign: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>Gerencie sua banca como um profissional</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Rastreie seus resultados, analise seu edge e descubra seus padrões com IA.</div>
+          <button onClick={() => { window.history.replaceState({}, "", window.location.pathname); window.location.reload(); }} style={{ background: "var(--primary)", color: "#000", border: "none", borderRadius: 8, padding: "12px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>CRIAR CONTA GRÁTIS</button>
+        </div>
+      </div>
+    </div>
+  );
 
   if (authLoading || (user && !loaded)) return (
     <div style={{ display: "flex", width: "100%", height: "100vh", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, color: "var(--accent)" }}>
@@ -1159,6 +1358,39 @@ export default function BankrollVault() {
                 </div>
               )}
               
+              {hasSettled && (
+                <div className="card" style={{ marginBottom: 24, padding: "16px 20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <span className="section-title" style={{ margin: 0, marginBottom: 4, display: "block" }}>COMPARTILHAR BANCA</span>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>Gera um card de performance com seus resultados</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <button onClick={async () => { setSharingStats(true); const c = await generateStatsCard(stats, userDisplayName); await shareAsImage(c, "minha-banca.png"); setSharingStats(false); }} disabled={sharingStats} style={{ display: "flex", alignItems: "center", gap: 7, background: sharingStats ? "var(--border)" : "rgba(0,212,138,0.1)", color: sharingStats ? "var(--muted)" : "var(--primary)", border: "1px solid rgba(0,212,138,0.3)", borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: sharingStats ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
+                        {sharingStats ? <><RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> GERANDO...</> : <><ImageDown size={13} /> BAIXAR CARD</>}
+                      </button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: config.publicProfile ? "rgba(139,127,245,0.1)" : "rgba(0,0,0,0.2)", border: `1px solid ${config.publicProfile ? "rgba(139,127,245,0.4)" : "var(--border)"}`, borderRadius: 8, cursor: "pointer", transition: "all 0.2s" }}
+                        onClick={() => { const np = !config.publicProfile; saveConfig({ ...config, publicProfile: np }); syncPublicProfile(np); }}>
+                        <Globe size={13} color={config.publicProfile ? "var(--accent)" : "var(--muted)"} />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: config.publicProfile ? "var(--accent)" : "var(--muted)" }}>
+                          {config.publicProfile ? "Perfil público ✓" : "Tornar público"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {config.publicProfile && (
+                    <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(139,127,245,0.06)", borderRadius: 8, fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <Globe size={12} color="var(--accent)" />
+                      <span>Seu perfil aparece no ranking da comunidade. Link: </span>
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontSize: 11 }}>
+                        {window.location.origin}?tipster={user?.uid}
+                      </span>
+                      <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?tipster=${user?.uid}`); }} style={{ background: "transparent", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, transition: "background 0.2s" }} onMouseOver={e => e.currentTarget.style.background = "rgba(139,127,245,0.1)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>COPIAR LINK</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {bets.length === 0 && (
                 <div className="empty-state">
                   <div style={{ fontSize: 48, marginBottom: 16, color: "var(--border)" }}><LayoutDashboard size={48} /></div>
@@ -1429,8 +1661,13 @@ export default function BankrollVault() {
                       </div>
                       <div style={{ display: "flex", gap: 2, flexShrink: 0, alignItems: "flex-start" }}>
                         {deletingId !== bet.id && (
-                          <button onClick={() => shareBet(bet)} title={copiedId === bet.id ? "Copiado!" : "Compartilhar aposta"} style={{ background: "transparent", border: "none", color: copiedId === bet.id ? "var(--primary)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (copiedId !== bet.id) e.currentTarget.style.color = "var(--primary)"; }} onMouseOut={e => { if (copiedId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
+                          <button onClick={() => shareBet(bet)} title={copiedId === bet.id ? "Copiado!" : "Compartilhar (texto)"} style={{ background: "transparent", border: "none", color: copiedId === bet.id ? "var(--primary)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (copiedId !== bet.id) e.currentTarget.style.color = "var(--primary)"; }} onMouseOut={e => { if (copiedId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
                             {copiedId === bet.id ? <Check size={15} /> : <Share2 size={15} />}
+                          </button>
+                        )}
+                        {deletingId !== bet.id && (
+                          <button onClick={async () => { setSharingBetId(bet.id); const c = await generateBetCard(bet); await shareAsImage(c, `aposta-${bet.date}.png`); setSharingBetId(null); }} title="Salvar como imagem" style={{ background: "transparent", border: "none", color: sharingBetId === bet.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--accent)"; }} onMouseOut={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
+                            {sharingBetId === bet.id ? <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} /> : <ImageDown size={15} />}
                           </button>
                         )}
                         {deletingId !== bet.id && (
@@ -1474,6 +1711,7 @@ export default function BankrollVault() {
                     {tabBtn("bookmaker", "Casas de Aposta")}
                     {tabBtn("sport", "Esportes")}
                     {tabBtn("calendar", "Calendário")}
+                    {tabBtn("community", "Comunidade")}
                   </div>
                   {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
                   {analyzeTab === "market" && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="PERFORMANCE POR MERCADO" data={marketSeg} /></>}
@@ -1545,6 +1783,70 @@ export default function BankrollVault() {
                           </div>
                         );
                       })()}
+                    </div>
+                  )}
+                  {analyzeTab === "community" && (
+                    <div>
+                      <div className="card" style={{ marginBottom: 20, padding: "20px 24px", background: config.publicProfile ? "rgba(139,127,245,0.06)" : "rgba(0,0,0,0.2)", borderColor: config.publicProfile ? "rgba(139,127,245,0.3)" : "var(--border)" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                              <Globe size={14} color={config.publicProfile ? "var(--accent)" : "var(--muted)"} /> Perfil público de tipster
+                            </div>
+                            <div style={{ fontSize: 12, color: "var(--muted)" }}>{config.publicProfile ? "Seu perfil aparece no ranking abaixo." : "Ative para aparecer no ranking da comunidade."}</div>
+                          </div>
+                          <button onClick={() => { const np = !config.publicProfile; saveConfig({ ...config, publicProfile: np }); syncPublicProfile(np); }} style={{ display: "flex", alignItems: "center", gap: 8, background: config.publicProfile ? "rgba(139,127,245,0.2)" : "rgba(0,0,0,0.3)", color: config.publicProfile ? "var(--accent)" : "var(--muted)", border: `1px solid ${config.publicProfile ? "rgba(139,127,245,0.5)" : "var(--border)"}`, borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s", whiteSpace: "nowrap" }}>
+                            <Users size={14} /> {config.publicProfile ? "VISÍVEL NO RANKING" : "ENTRAR NO RANKING"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="card" style={{ padding: "20px 24px" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                          <span className="section-title" style={{ margin: 0 }}>RANKING DE TIPSTERS</span>
+                          <button onClick={fetchLeaderboard} disabled={leaderboardLoading} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "7px 12px", fontSize: 11, cursor: leaderboardLoading ? "not-allowed" : "pointer", fontWeight: 600, transition: "all 0.2s" }}>
+                            <RefreshCw size={12} style={leaderboardLoading ? { animation: "spin 1s linear infinite" } : {}} /> ATUALIZAR
+                          </button>
+                        </div>
+                        {leaderboard.length === 0 && !leaderboardLoading && (
+                          <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}>
+                            <Users size={36} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
+                            <div style={{ fontSize: 13, marginBottom: 8 }}>Clique em Atualizar para carregar o ranking.</div>
+                            <div style={{ fontSize: 12, opacity: 0.7 }}>Tipsters com perfil público aparecem aqui ordenados por ROI.</div>
+                          </div>
+                        )}
+                        {leaderboard.length > 0 && (
+                          <div style={{ overflowX: "auto" }}>
+                            <table className="data-table">
+                              <thead><tr>
+                                {["#", "TIPSTER", "ROI", "YIELD", "ACERTO", "AP"].map(h => (
+                                  <th key={h} style={{ textAlign: h === "TIPSTER" || h === "#" ? "left" : "right" }}>{h}</th>
+                                ))}
+                              </tr></thead>
+                              <tbody>
+                                {leaderboard.map((p, i) => (
+                                  <tr key={p.uid}>
+                                    <td style={{ color: i < 3 ? ["#ffd700","#c0c0c0","#cd7f32"][i] : "var(--muted)", fontWeight: 700, fontFamily: "var(--font-mono)" }}>{i + 1}</td>
+                                    <td>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), var(--primary))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                                          {(p.displayName?.[0] || "?").toUpperCase()}
+                                        </div>
+                                        <span style={{ fontWeight: 600, color: "var(--text)" }}>{p.displayName || "Anônimo"}</span>
+                                        {p.uid === user?.uid && <span className="badge acc" style={{ fontSize: 9, padding: "2px 6px" }}>VOCÊ</span>}
+                                      </div>
+                                    </td>
+                                    <td style={{ textAlign: "right", color: p.roi >= 0 ? "var(--primary)" : "var(--danger)", fontWeight: 700, fontFamily: "var(--font-mono)" }}>{fmtPct(p.roi)}</td>
+                                    <td style={{ textAlign: "right", color: p.yield >= 0 ? "var(--primary)" : "var(--danger)", fontFamily: "var(--font-mono)" }}>{fmtPct(p.yield)}</td>
+                                    <td style={{ textAlign: "right", color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{p.winRate?.toFixed(1)}%</td>
+                                    <td style={{ textAlign: "right", color: "var(--muted)" }}>{p.settledBets}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </>
