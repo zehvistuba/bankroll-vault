@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera } from "lucide-react";
+import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, collection, deleteDoc, writeBatch } from "firebase/firestore";
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
 const BOOKMAKERS = ["Bet365", "Betano", "Sportingbet", "Novibet", "Betnacional", "Pinnacle", "Betfair", "KTO", "Outros"];
@@ -13,8 +13,8 @@ const fmtPct = (v) => `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
 const getBetPL = (bet) => bet.result === "win" ? bet.stake * (bet.odds - 1) : bet.result === "loss" ? -bet.stake : 0;
 const getCLV = (bet) => bet.closingOdds ? ((bet.odds - bet.closingOdds) / bet.closingOdds * 100) : null;
 const RESULT_MAP = { win: ["W", "g"], loss: ["L", "r"], void: ["V", "muted"], pending: ["?", "acc"] };
-const defaultSelection = () => ({ id: Date.now() + Math.random(), description: "", sport: "Futebol", market: "1x2", odds: "" });
-const defaultForm = () => ({ date: new Date().toISOString().split("T")[0], betType: "simple", sport: "Futebol", market: "1x2", bookmaker: localStorage.getItem("lastBookmaker") || "Bet365", description: "", odds: "", closingOdds: "", stake: "", result: "pending", notes: "", selections: [defaultSelection(), defaultSelection()] });
+const defaultSelection = () => ({ id: crypto.randomUUID(), description: "", sport: "Futebol", market: "1x2", odds: "" });
+const defaultForm = () => ({ date: new Date().toISOString().split("T")[0], betType: "simple", sport: "Futebol", market: "1x2", bookmaker: localStorage.getItem("lastBookmaker") || "Bet365", description: "", odds: "", closingOdds: "", stake: "", result: "pending", notes: "", prob: "", selections: [defaultSelection(), defaultSelection()] });
 
 function buildSegments(bets, key) {
   const map = {};
@@ -89,8 +89,9 @@ function HighlightCards({ data, bestLabel, worstLabel }) {
 }
 
 const GEMINI_MODELS = [
-  { id: "gemini-2.5-flash", label: "Flash 2.5", desc: "Recomendado · Estável" },
-  { id: "gemini-3-flash-preview", label: "Flash 3.0", desc: "Nova Geração · Preview" }
+  { id: "gemini-2.5-flash", label: "Flash 2.5", desc: "Recomendado · Rápido" },
+  { id: "gemini-2.5-pro", label: "Pro 2.5", desc: "Mais preciso · Lento" },
+  { id: "gemini-2.0-flash", label: "Flash 2.0", desc: "Estável · Econômico" },
 ];
 
 const SYSTEM_PROMPT = `Você é um analista quantitativo de apostas esportivas de nível profissional, especializado em Expected Value (EV), gestão de banca e detecção de padrões comportamentais. Analise os dados fornecidos e gere um diagnóstico técnico em português brasileiro.
@@ -409,7 +410,7 @@ export default function BankrollVault() {
   const [userDisplayName, setUserDisplayName] = useState("");
   const [deletingId, setDeletingId] = useState(null);
   const [editingBet, setEditingBet] = useState(null);
-  const [historyFilter, setHistoryFilter] = useState({ result: "all", search: "" });
+  const [historyFilter, setHistoryFilter] = useState({ result: "all", search: "", bookmaker: "all", sport: "all", sortBy: "date_desc" });
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
   const imageInputRef = useRef(null);
@@ -430,33 +431,62 @@ export default function BankrollVault() {
   }, []);
 
   useEffect(() => {
-    if (!user) { setBets([]); setConfig({ initialBankroll: 1000 }); setGeminiKey(""); setLoaded(false); return; }
+    if (!user) { setBets([]); setConfig({ initialBankroll: 1000, monthlyGoal: 0 }); setGeminiKey(""); setLoaded(false); return; }
     setSyncError("");
-    const unsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setBets(data.bets || []);
-        setConfig(data.config || { initialBankroll: 1000 });
+    const readyFlags = { doc: false, bets: false };
+    const markReady = () => { if (readyFlags.doc && readyFlags.bets) setLoaded(true); };
+    let migrating = false;
+
+    const unsubDoc = onSnapshot(doc(db, "users", user.uid), async (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setConfig(data.config || { initialBankroll: 1000, monthlyGoal: 0 });
         setGeminiKey(data.geminiKey || "");
+        if (data.bets?.length > 0 && !data.betsMigrated && !migrating) {
+          migrating = true;
+          try {
+            const chunks = [];
+            for (let i = 0; i < data.bets.length; i += 400) chunks.push(data.bets.slice(i, i + 400));
+            for (const chunk of chunks) {
+              const batch = writeBatch(db);
+              chunk.forEach(bet => batch.set(doc(collection(db, "users", user.uid, "bets"), String(bet.id)), bet));
+              await batch.commit();
+            }
+            await setDoc(doc(db, "users", user.uid), { bets: [], betsMigrated: true }, { merge: true });
+          } catch (e) { console.error("Migration error:", e); }
+          migrating = false;
+        }
       }
-      setLoaded(true);
-    }, (err) => {
-      console.error("Snapshot error:", err);
-      setSyncError("Erro de leitura do banco: " + err.message);
-      setLoaded(true);
-    });
-    return () => unsub();
+      readyFlags.doc = true; markReady();
+    }, err => { setSyncError("Erro: " + err.message); readyFlags.doc = true; markReady(); });
+
+    const unsubBets = onSnapshot(collection(db, "users", user.uid, "bets"), snap => {
+      setBets(snap.docs.map(d => d.data()));
+      readyFlags.bets = true; markReady();
+    }, err => { console.error("Bets snapshot error:", err); readyFlags.bets = true; markReady(); });
+
+    return () => { unsubDoc(); unsubBets(); };
   }, [user]);
 
-  const saveData = useCallback(async (newBets, newConfig) => {
+  const saveConfig = useCallback(async (newConfig) => {
+    setConfig(newConfig);
     if (!user) return;
     try {
-      await setDoc(doc(db, "users", user.uid), { bets: newBets, config: newConfig }, { merge: true });
+      await setDoc(doc(db, "users", user.uid), { config: newConfig }, { merge: true });
       setSyncError("");
-    } catch (err) {
-      console.error("Save error:", err);
-      setSyncError("Não foi possível salvar na nuvem: " + err.message);
-    }
+    } catch (err) { setSyncError("Erro ao salvar configuração."); }
+  }, [user]);
+
+  const updateBetResult = useCallback(async (betId, result) => {
+    if (!user) return;
+    try { await setDoc(doc(db, "users", user.uid, "bets", String(betId)), { result }, { merge: true }); }
+    catch (err) { setSyncError("Erro ao salvar resultado."); }
+  }, [user]);
+
+  const deleteBet = useCallback(async (betId) => {
+    if (!user) return;
+    try { await deleteDoc(doc(db, "users", user.uid, "bets", String(betId))); setDeletingId(null); }
+    catch (err) { setSyncError("Erro ao excluir aposta."); }
   }, [user]);
 
   const saveGeminiKey = useCallback(async (key) => {
@@ -684,19 +714,22 @@ export default function BankrollVault() {
     }
   };
 
-  const addBet = () => {
+  const addBet = async () => {
     const data = buildBetData();
     if (!data) return;
-    const newBets = editingBet
-      ? bets.map(b => b.id === editingBet.id ? { ...data, id: editingBet.id } : b)
-      : [...bets, { ...data, id: Date.now() }];
-    setBets(newBets);
-    saveData(newBets, config);
-    localStorage.setItem("lastBookmaker", form.bookmaker);
-    const dest = editingBet ? "history" : "dashboard";
-    setEditingBet(null);
-    setForm(defaultForm());
-    setView(dest);
+    try {
+      if (editingBet) {
+        await setDoc(doc(db, "users", user.uid, "bets", String(editingBet.id)), { ...data, id: editingBet.id });
+      } else {
+        const id = crypto.randomUUID();
+        await setDoc(doc(db, "users", user.uid, "bets", id), { ...data, id });
+      }
+      localStorage.setItem("lastBookmaker", form.bookmaker);
+      const dest = editingBet ? "history" : "dashboard";
+      setEditingBet(null);
+      setForm(defaultForm());
+      setView(dest);
+    } catch (err) { setSyncError("Erro ao salvar aposta: " + err.message); }
   };
 
   const startEdit = (bet) => {
@@ -722,21 +755,83 @@ export default function BankrollVault() {
 
   const pending = bets.filter(b => b.result === "pending");
   const hasSettled = bets.some(b => b.result !== "pending");
+
+  const monthlyData = useMemo(() => {
+    const months = {};
+    bets.filter(b => b.result !== "pending" && b.date).forEach(bet => {
+      const m = bet.date.slice(0, 7);
+      if (!months[m]) months[m] = { month: m, pl: 0, stake: 0 };
+      months[m].pl += getBetPL(bet);
+      months[m].stake += bet.stake;
+    });
+    return Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).slice(-12).map(m => ({
+      ...m,
+      label: new Date(m.month + "-15").toLocaleString("pt-BR", { month: "short" }).replace(".", "") + "/" + m.month.slice(2, 4),
+    }));
+  }, [bets]);
+
+  const currentStreak = useMemo(() => {
+    const settled = bets.filter(b => b.result === "win" || b.result === "loss").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    if (!settled.length) return null;
+    const type = settled[0].result;
+    let count = 0;
+    for (const b of settled) { if (b.result === type) count++; else break; }
+    return { type, count };
+  }, [bets]);
+
+  const pendingExposure = useMemo(() => bets.filter(b => b.result === "pending").reduce((s, b) => s + (b.stake || 0), 0), [bets]);
+
+  const formEV = useMemo(() => {
+    const p = parseFloat(form.prob) / 100;
+    const o = parseFloat(form.odds);
+    if (!p || !o || p <= 0 || p >= 1 || o <= 1) return null;
+    const ev = p * (o - 1) - (1 - p);
+    return { ev, pct: (ev * 100).toFixed(2), positive: ev > 0 };
+  }, [form.prob, form.odds]);
+
+  const thisMonthPL = useMemo(() => {
+    const m = new Date().toISOString().slice(0, 7);
+    return monthlyData.find(d => d.month === m)?.pl ?? null;
+  }, [monthlyData]);
+
+  const exportCSV = () => {
+    const headers = ["Data","Tipo","Descrição","Casa","Esporte","Mercado","Odds","Stake","Resultado","P&L","CLV","Notas"];
+    const rows = filteredBets.map(b => {
+      const pl = getBetPL(b); const clv = getCLV(b);
+      return [b.date, b.type === "multiple" ? `Múltipla(${b.selections?.length}x)` : "Simples",
+        `"${(b.description||"").replace(/"/g,'""')}"`, b.bookmaker, b.sport||"", b.market||"",
+        b.odds, b.stake, b.result, pl.toFixed(2), clv!=null?clv.toFixed(2):"",
+        `"${(b.notes||"").replace(/"/g,'""')}"`].join(",");
+    });
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `banca-logica-${new Date().toISOString().split("T")[0]}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const filteredBets = [...bets]
     .filter(b => historyFilter.result === "all" || b.result === historyFilter.result)
+    .filter(b => historyFilter.bookmaker === "all" || b.bookmaker === historyFilter.bookmaker)
+    .filter(b => historyFilter.sport === "all" || b.sport === historyFilter.sport || b.selections?.some(s => s.sport === historyFilter.sport))
     .filter(b => {
       if (!historyFilter.search) return true;
       const q = historyFilter.search.toLowerCase();
-      return (
-        b.description?.toLowerCase().includes(q) ||
-        b.bookmaker?.toLowerCase().includes(q) ||
-        b.date?.includes(q) ||
-        b.sport?.toLowerCase().includes(q) ||
-        b.market?.toLowerCase().includes(q) ||
-        b.selections?.some(s => s.description?.toLowerCase().includes(q))
-      );
+      return b.description?.toLowerCase().includes(q) || b.bookmaker?.toLowerCase().includes(q) ||
+        b.date?.includes(q) || b.sport?.toLowerCase().includes(q) || b.market?.toLowerCase().includes(q) ||
+        b.selections?.some(s => s.description?.toLowerCase().includes(q));
     })
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort((a, b) => {
+      switch (historyFilter.sortBy) {
+        case "date_asc": return (a.date||"").localeCompare(b.date||"");
+        case "pl_desc": return getBetPL(b) - getBetPL(a);
+        case "pl_asc": return getBetPL(a) - getBetPL(b);
+        case "odds_desc": return (b.odds||0) - (a.odds||0);
+        case "stake_desc": return (b.stake||0) - (a.stake||0);
+        default: return (b.date||"").localeCompare(a.date||"");
+      }
+    });
 
   const NAV = [
     { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -797,7 +892,7 @@ export default function BankrollVault() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <BalanceDisplay
               value={stats.currentBankroll}
-              onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; setConfig(nc); saveData(bets, nc); }}
+              onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; saveConfig(nc); }}
             />
             <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
               <LogOut size={16} />
@@ -816,7 +911,7 @@ export default function BankrollVault() {
           <div className="desktop-header-info" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
             <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text)" }}>{NAV.find(n => n.id === view)?.label}</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <BalanceDisplay value={stats.currentBankroll} onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; setConfig(nc); saveData(bets, nc); }} />
+              <BalanceDisplay value={stats.currentBankroll} onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; saveConfig(nc); }} />
               <button onClick={() => signOut(auth)} title="Sair da Conta" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }} onMouseOver={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }} onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
                 <LogOut size={16} />
               </button>
@@ -849,6 +944,76 @@ export default function BankrollVault() {
                 ))}
               </div>
               
+              {/* ONBOARDING */}
+              {bets.length === 0 && !config.onboardingDone && (
+                <div className="card animate-fade-in" style={{ marginBottom: 24, borderColor: "rgba(139,127,245,0.3)", background: "linear-gradient(180deg,rgba(139,127,245,0.06) 0%,transparent 100%)" }}>
+                  <div style={{ textAlign: "center", marginBottom: 20 }}>
+                    <div style={{ fontSize: 36, marginBottom: 8 }}>🎯</div>
+                    <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6, color: "var(--text)" }}>Bem-vindo à Banca Lógica!</h2>
+                    <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.7 }}>Configure em 3 passos e comece a gerir sua banca como um profissional.</p>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+                    {[{ e: "💰", t: "1. Defina sua banca", d: "Toque no saldo no canto superior para ajustar o valor inicial.", a: null },
+                      { e: "📝", t: "2. Registre apostas", d: "Manualmente ou importe por foto do cupom com IA.", a: () => setView("register") },
+                      { e: "🤖", t: "3. Ative a IA", d: "Configure o Gemini para análises automáticas de performance.", a: () => setView("analyze") }].map((s, i) => (
+                      <div key={i} onClick={s.a || undefined} style={{ flex: "1 1 160px", background: "rgba(0,0,0,0.2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 12px", textAlign: "center", cursor: s.a ? "pointer" : "default", transition: "border-color 0.2s" }}
+                        onMouseOver={e => s.a && (e.currentTarget.style.borderColor = "rgba(139,127,245,0.5)")}
+                        onMouseOut={e => s.a && (e.currentTarget.style.borderColor = "var(--border)")}>
+                        <div style={{ fontSize: 22, marginBottom: 6 }}>{s.e}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{s.t}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>{s.d}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => saveConfig({ ...config, onboardingDone: true })} style={{ width: "100%", background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: 10, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>PULAR INTRODUÇÃO</button>
+                </div>
+              )}
+
+              {/* STREAK + EXPOSIÇÃO */}
+              {currentStreak && currentStreak.count >= 2 && (
+                <div style={{ marginBottom: 16, padding: "12px 16px", borderRadius: 10, display: "flex", alignItems: "center", gap: 10, background: currentStreak.type === "win" ? "rgba(0,212,138,0.08)" : "rgba(255,61,90,0.08)", border: `1px solid ${currentStreak.type === "win" ? "rgba(0,212,138,0.25)" : "rgba(255,61,90,0.25)"}` }}>
+                  {currentStreak.type === "win" ? <TrendingUp size={16} color="var(--primary)" /> : <TrendingDown size={16} color="var(--danger)" />}
+                  <span style={{ fontSize: 13, fontWeight: 600, color: currentStreak.type === "win" ? "var(--primary)" : "var(--danger)" }}>
+                    {currentStreak.count} {currentStreak.type === "win" ? "vitórias" : "derrotas"} consecutivas
+                  </span>
+                </div>
+              )}
+              {pendingExposure > 0 && (
+                <div style={{ marginBottom: 24, padding: "10px 16px", borderRadius: 10, display: "flex", alignItems: "center", gap: 8, background: "rgba(139,127,245,0.06)", border: "1px solid rgba(139,127,245,0.15)" }}>
+                  <Target size={14} color="var(--accent)" />
+                  <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                    <strong style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{fmt(pendingExposure)}</strong> em risco · {pending.length} aposta{pending.length > 1 ? "s" : ""} pendente{pending.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+              )}
+
+              {/* META DO MÊS */}
+              {config.monthlyGoal > 0 && thisMonthPL !== null && (
+                <div className="card" style={{ marginBottom: 24, padding: "18px 24px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <span className="section-title" style={{ margin: 0 }}>META DO MÊS</span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "var(--font-mono)", color: thisMonthPL >= 0 ? "var(--primary)" : "var(--danger)" }}>{thisMonthPL >= 0 ? "+" : ""}{fmt(thisMonthPL)}</span>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>/ {fmt(config.monthlyGoal)}</span>
+                      <button onClick={() => saveConfig({ ...config, monthlyGoal: 0 })} title="Remover meta" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 2, display: "flex" }}><X size={12}/></button>
+                    </div>
+                  </div>
+                  <div style={{ height: 6, background: "var(--border)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", borderRadius: 3, background: thisMonthPL < 0 ? "var(--danger)" : thisMonthPL >= config.monthlyGoal ? "var(--primary)" : "var(--accent)", width: `${Math.min(Math.max((thisMonthPL / config.monthlyGoal) * 100, 0), 100)}%`, transition: "width 0.5s ease" }} />
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted)" }}>
+                    {thisMonthPL >= config.monthlyGoal ? "🎯 Meta atingida este mês!" : `${((thisMonthPL / config.monthlyGoal) * 100).toFixed(1)}% da meta`}
+                  </div>
+                </div>
+              )}
+              {!config.monthlyGoal && hasSettled && (
+                <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="number" placeholder="Definir meta mensal (R$)..." className="input" style={{ flex: 1, padding: "10px 14px", fontSize: 13 }}
+                    onKeyDown={e => { if (e.key === "Enter" && parseFloat(e.target.value) > 0) { saveConfig({ ...config, monthlyGoal: parseFloat(e.target.value) }); e.target.value = ""; }}} />
+                  <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>+ Meta mensal</span>
+                </div>
+              )}
+
               {stats.chartData.length > 2 && (
                 <div className="card" style={{ marginBottom: 24, padding: "24px 20px" }}>
                   <span className="section-title">EVOLUÇÃO DO BANKROLL</span>
@@ -870,6 +1035,25 @@ export default function BankrollVault() {
                 </div>
               )}
               
+              {/* GRÁFICO MENSAL P&L */}
+              {monthlyData.length > 1 && (
+                <div className="card" style={{ marginBottom: 24, padding: "24px 20px" }}>
+                  <span className="section-title">P&L POR MÊS</span>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }} tickFormatter={v => `R$${v}`} axisLine={false} tickLine={false} />
+                      <ReferenceLine y={0} stroke="var(--border)" />
+                      <Tooltip contentStyle={{ background: "rgba(10,10,16,0.9)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, fontFamily: "var(--font-mono)" }} formatter={v => [fmt(v), "P&L"]} labelStyle={{ color: "var(--muted)" }} />
+                      <Bar dataKey="pl" radius={[4, 4, 0, 0]}>
+                        {monthlyData.map((entry, i) => <Cell key={i} fill={entry.pl >= 0 ? "var(--primary)" : "var(--danger)"} fillOpacity={0.8} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
               {pending.length > 0 && (
                 <div className="card" style={{ marginBottom: 24 }}>
                   <span className="section-title">APOSTAS PENDENTES</span>
@@ -900,9 +1084,9 @@ export default function BankrollVault() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 12 }}>
-                        <button className="outline-btn g" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "win" } : b); setBets(nb); saveData(nb, config); }}>GANHOU</button>
-                        <button className="outline-btn r" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "loss" } : b); setBets(nb); saveData(nb, config); }}>PERDEU</button>
-                        <button className="outline-btn muted" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "void" } : b); setBets(nb); saveData(nb, config); }}>VOID</button>
+                        <button className="outline-btn g" onClick={() => updateBetResult(bet.id, "win")}>GANHOU</button>
+                        <button className="outline-btn r" onClick={() => updateBetResult(bet.id, "loss")}>PERDEU</button>
+                        <button className="outline-btn muted" onClick={() => updateBetResult(bet.id, "void")}>VOID</button>
                       </div>
                     </div>
                   ))}
@@ -953,6 +1137,7 @@ export default function BankrollVault() {
               </div>
 
               {form.betType === "simple" ? (
+                <>
                 <div className="grid-2">
                   <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                     <span className="form-label">DESCRIÇÃO</span>
@@ -1003,6 +1188,21 @@ export default function BankrollVault() {
                     <span style={{ fontSize: 15, fontWeight: 700, color: "var(--primary)", fontFamily: "var(--font-mono)" }}>{fmt(parseFloat(form.stake) * parseFloat(form.odds))}</span>
                   </div>
                 )}
+                <div className="grid-2" style={{ marginBottom: 0 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <span className="form-label">PROB. ESTIMADA (%) — EV</span>
+                    <input type="number" placeholder="ex: 58 → calcula seu EV" step="1" min="1" max="99" value={form.prob} onChange={e => setForm(p => ({ ...p, prob: e.target.value }))} className="input" />
+                  </div>
+                  {formEV && (
+                    <div className="form-group" style={{ marginBottom: 0, display: "flex", alignItems: "flex-end" }}>
+                      <div style={{ width: "100%", padding: "16px", borderRadius: 10, background: formEV.positive ? "rgba(0,212,138,0.08)" : "rgba(255,61,90,0.08)", border: `1px solid ${formEV.positive ? "rgba(0,212,138,0.3)" : "rgba(255,61,90,0.3)"}` }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>EXPECTED VALUE</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-mono)", color: formEV.positive ? "var(--primary)" : "var(--danger)" }}>{formEV.positive ? "+" : ""}{formEV.pct}%</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                </>
               ) : (
                 <>
                   <div className="grid-2" style={{ marginBottom: 8 }}>
@@ -1087,11 +1287,36 @@ export default function BankrollVault() {
               </div>
 
               {/* Filtros */}
-              <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {[["all", "TODOS"], ["pending", "PENDENTES"], ["win", "GANHOU"], ["loss", "PERDEU"], ["void", "VOID"]].map(([val, label]) => (
-                    <button key={val} onClick={() => setHistoryFilter(f => ({ ...f, result: val }))} style={{ background: historyFilter.result === val ? "var(--primary)" : "rgba(0,0,0,0.2)", color: historyFilter.result === val ? "#000" : "var(--muted)", border: `1px solid ${historyFilter.result === val ? "var(--primary)" : "var(--border)"}`, borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)", transition: "all 0.2s ease", letterSpacing: 0.5 }}>{label}</button>
+                  {[["all","TODOS"],["pending","PENDENTES"],["win","GANHOU"],["loss","PERDEU"],["void","VOID"]].map(([val, label]) => (
+                    <button key={val} onClick={() => setHistoryFilter(f => ({ ...f, result: val }))} style={{ background: historyFilter.result === val ? "var(--primary)" : "rgba(0,0,0,0.2)", color: historyFilter.result === val ? "#000" : "var(--muted)", border: `1px solid ${historyFilter.result === val ? "var(--primary)" : "var(--border)"}`, borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)", transition: "all 0.2s ease" }}>{label}</button>
                   ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <select value={historyFilter.bookmaker} onChange={e => setHistoryFilter(f => ({ ...f, bookmaker: e.target.value }))} className="select" style={{ flex: "1 1 140px", padding: "10px 14px", fontSize: 12 }}>
+                    <option value="all">Todas as casas</option>
+                    {BOOKMAKERS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                  <select value={historyFilter.sport} onChange={e => setHistoryFilter(f => ({ ...f, sport: e.target.value }))} className="select" style={{ flex: "1 1 130px", padding: "10px 14px", fontSize: 12 }}>
+                    <option value="all">Todos esportes</option>
+                    {SPORTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <select value={historyFilter.sortBy} onChange={e => setHistoryFilter(f => ({ ...f, sortBy: e.target.value }))} className="select" style={{ flex: "1 1 160px", padding: "10px 14px", fontSize: 12 }}>
+                    <option value="date_desc">Mais recentes</option>
+                    <option value="date_asc">Mais antigas</option>
+                    <option value="pl_desc">Maior lucro</option>
+                    <option value="pl_asc">Maior perda</option>
+                    <option value="odds_desc">Maiores odds</option>
+                    <option value="stake_desc">Maior stake</option>
+                  </select>
+                  {filteredBets.length > 0 && (
+                    <button onClick={exportCSV} title="Exportar CSV" style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 10, padding: "10px 14px", fontSize: 12, cursor: "pointer", fontWeight: 600, transition: "all 0.2s", whiteSpace: "nowrap" }}
+                      onMouseOver={e => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.borderColor = "var(--primary)"; }}
+                      onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+                      <Download size={13} /> CSV
+                    </button>
+                  )}
                 </div>
                 <div style={{ position: "relative" }}>
                   <Search size={14} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none" }} />
@@ -1142,7 +1367,7 @@ export default function BankrollVault() {
                         )}
                         {deletingId === bet.id ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-                            <button onClick={() => { const nb = bets.filter(b => b.id !== bet.id); setBets(nb); saveData(nb, config); setDeletingId(null); }} style={{ fontSize: 11, background: "rgba(255,61,90,0.15)", color: "var(--danger)", border: "1px solid rgba(255,61,90,0.35)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>EXCLUIR</button>
+                            <button onClick={() => deleteBet(bet.id)} style={{ fontSize: 11, background: "rgba(255,61,90,0.15)", color: "var(--danger)", border: "1px solid rgba(255,61,90,0.35)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>EXCLUIR</button>
                             <button onClick={() => setDeletingId(null)} style={{ fontSize: 11, background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>CANCELAR</button>
                           </div>
                         ) : (
@@ -1152,9 +1377,9 @@ export default function BankrollVault() {
                     </div>
                     {bet.result === "pending" && (
                       <div style={{ display: "flex", gap: 10, marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-                        <button className="outline-btn g" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "win" } : b); setBets(nb); saveData(nb, config); }}>GANHOU</button>
-                        <button className="outline-btn r" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "loss" } : b); setBets(nb); saveData(nb, config); }}>PERDEU</button>
-                        <button className="outline-btn muted" onClick={() => { const nb = bets.map(b => b.id === bet.id ? { ...b, result: "void" } : b); setBets(nb); saveData(nb, config); }}>VOID</button>
+                        <button className="outline-btn g" onClick={() => updateBetResult(bet.id, "win")}>GANHOU</button>
+                        <button className="outline-btn r" onClick={() => updateBetResult(bet.id, "loss")}>PERDEU</button>
+                        <button className="outline-btn muted" onClick={() => updateBetResult(bet.id, "void")}>VOID</button>
                       </div>
                     )}
                   </div>
