@@ -364,7 +364,13 @@ function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKe
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
       if (!text) throw new Error("Resposta vazia da API");
       setInsight(text);
-    } catch (err) { setError("Erro: " + err.message); }
+    } catch (err) {
+      const msg = err.message || "";
+      if (msg.includes("API key not valid") || msg.includes("invalid API key")) setError("API Key inválida. Verifique sua chave no Google AI Studio.");
+      else if (msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")) setError("Limite de requisições atingido. Aguarde alguns minutos e tente novamente.");
+      else if (msg.includes("timeout")) setError("Tempo esgotado. Verifique sua conexão e tente novamente.");
+      else setError("Erro ao gerar análise: " + msg);
+    }
     finally { setLoading(false); }
   };
 
@@ -533,6 +539,8 @@ export default function BankrollVault() {
   const [historyFilter, setHistoryFilter] = useState({ result: "all", search: "", bookmaker: "all", sport: "all", sortBy: "date_desc" });
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [shareToast, setShareToast] = useState("");
   const imageInputRef = useRef(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
   const [milestoneToast, setMilestoneToast] = useState(null);
@@ -1030,6 +1038,18 @@ export default function BankrollVault() {
   };
 
   const addBet = async () => {
+    setFormError("");
+    if (form.betType === "simple") {
+      if (!form.description.trim()) { setFormError("Descrição é obrigatória."); return; }
+      if (!form.odds || parseFloat(form.odds) <= 1) { setFormError("Informe uma odd válida (maior que 1.00)."); return; }
+      if (!form.stake || parseFloat(form.stake) <= 0) { setFormError("Informe o valor do stake."); return; }
+      if (parseFloat(form.stake) > stats.currentBankroll * 5) { setFormError(`Stake não pode ser maior que 5× sua banca (${fmt(stats.currentBankroll * 5)}). Verifique o valor.`); return; }
+    } else {
+      const valid = form.selections.filter(s => s.description && s.odds && parseFloat(s.odds) > 0);
+      if (valid.length < 2) { setFormError("Preencha ao menos 2 seleções com descrição e odds."); return; }
+      if (!form.stake || parseFloat(form.stake) <= 0) { setFormError("Informe o valor do stake."); return; }
+      if (parseFloat(form.stake) > stats.currentBankroll * 5) { setFormError(`Stake não pode ser maior que 5× sua banca (${fmt(stats.currentBankroll * 5)}). Verifique o valor.`); return; }
+    }
     const data = buildBetData();
     if (!data) return;
     try {
@@ -1043,6 +1063,7 @@ export default function BankrollVault() {
       const dest = editingBet ? "history" : "dashboard";
       setEditingBet(null);
       setForm(defaultForm());
+      setFormError("");
       setView(dest);
     } catch (err) { setSyncError("Erro ao salvar aposta: " + err.message); }
   };
@@ -1083,8 +1104,8 @@ export default function BankrollVault() {
     ];
     const text = lines.join("\n");
     try {
-      if (navigator.share) { await navigator.share({ text }); }
-      else { await navigator.clipboard.writeText(text); setCopiedId(bet.id); setTimeout(() => setCopiedId(null), 2000); }
+      if (navigator.share) { await navigator.share({ text }); setShareToast("Compartilhado!"); setTimeout(() => setShareToast(""), 3000); }
+      else { await navigator.clipboard.writeText(text); setCopiedId(bet.id); setTimeout(() => setCopiedId(null), 2000); setShareToast("Copiado para a área de transferência!"); setTimeout(() => setShareToast(""), 3000); }
     } catch (_) {}
   };
 
@@ -1624,6 +1645,11 @@ export default function BankrollVault() {
                 </>
               )}
 
+              {formError && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger)", fontSize: 13, background: "rgba(255,61,90,0.08)", border: "1px solid rgba(255,61,90,0.3)", borderRadius: 8, padding: "10px 14px", marginTop: 8 }}>
+                  <AlertTriangle size={15} /> {formError}
+                </div>
+              )}
               <button className="btn" style={{ marginTop: 8 }} onClick={addBet}>{editingBet ? "SALVAR ALTERAÇÕES" : `REGISTRAR ${form.betType === "multiple" ? "MÚLTIPLA" : "APOSTA"}`}</button>
             </div>}
 
@@ -1718,7 +1744,7 @@ export default function BankrollVault() {
                           </button>
                         )}
                         {deletingId !== bet.id && (
-                          <button onClick={async () => { setSharingBetId(bet.id); const c = await generateBetCard(bet); await shareAsImage(c, `aposta-${bet.date}.png`); setSharingBetId(null); }} title="Salvar como imagem" style={{ background: "transparent", border: "none", color: sharingBetId === bet.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--accent)"; }} onMouseOut={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
+                          <button onClick={async () => { setSharingBetId(bet.id); try { const timeout = new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 10000)); const c = await Promise.race([generateBetCard(bet), timeout]); await shareAsImage(c, `aposta-${bet.date}.png`); setShareToast("Card gerado!"); } catch { setShareToast("Erro ao gerar imagem."); } finally { setSharingBetId(null); setTimeout(() => setShareToast(""), 3000); } }} title="Salvar como imagem" style={{ background: "transparent", border: "none", color: sharingBetId === bet.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--accent)"; }} onMouseOut={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
                             {sharingBetId === bet.id ? <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} /> : <ImageDown size={15} />}
                           </button>
                         )}
@@ -1954,8 +1980,14 @@ export default function BankrollVault() {
                         </div>
                       </>
                     : <>
-                        <span className="kpi-label" style={{ color: "var(--danger)" }}>EXPECTED VALUE (EV) NEGATIVO</span>
-                        <div style={{ fontSize: 14, color: "var(--text)", lineHeight: 1.6, marginTop: 8 }}>De acordo com sua probabilidade e a odd atual, esta aposta não possui valor matemático a longo prazo. O critério de Kelly recomenda <strong style={{ color: "var(--danger)" }}>não apostar</strong>.</div>
+                        <div style={{ fontSize: 32, marginBottom: 8 }}>🚫</div>
+                        <span className="kpi-label" style={{ color: "var(--danger)" }}>{kellyResult.fraction === 0 ? "SEM VANTAGEM — EV NEUTRO" : "EV NEGATIVO — NÃO APOSTE"}</span>
+                        <div style={{ fontSize: 14, color: "var(--text)", lineHeight: 1.6, marginTop: 8 }}>
+                          {kellyResult.fraction === 0
+                            ? "Sua probabilidade estimada empata exatamente com a odd oferecida. Não há vantagem matemática — o Kelly recomenda "
+                            : "Sua probabilidade estimada é inferior à odd oferecida. A expectativa é de prejuízo a longo prazo — o Kelly recomenda "}
+                          <strong style={{ color: "var(--danger)", fontSize: 16 }}>não apostar</strong>.
+                        </div>
                       </>
                   }
                 </div>
@@ -1965,6 +1997,12 @@ export default function BankrollVault() {
           </div>
         </div>
       </div>
+
+      {shareToast && (
+        <div className="animate-fade-in" style={{ position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.85)", color: "#fff", padding: "10px 20px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 2000, whiteSpace: "nowrap", border: "1px solid rgba(255,255,255,0.1)" }}>
+          {shareToast}
+        </div>
+      )}
 
       {milestoneToast && (
         <div className="animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }} onClick={() => setMilestoneToast(null)}>
