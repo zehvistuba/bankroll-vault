@@ -1104,8 +1104,14 @@ export default function BankrollVault() {
     ];
     const text = lines.join("\n");
     try {
-      if (navigator.share) { await navigator.share({ text }); setShareToast("Compartilhado!"); setTimeout(() => setShareToast(""), 3000); }
-      else { await navigator.clipboard.writeText(text); setCopiedId(bet.id); setTimeout(() => setCopiedId(null), 2000); setShareToast("Copiado para a área de transferência!"); setTimeout(() => setShareToast(""), 3000); }
+      if (navigator.share) {
+        try { await navigator.share({ text }); } catch (_) {}
+        setShareToast("Copiado!"); setTimeout(() => setShareToast(""), 3000);
+      } else {
+        await navigator.clipboard.writeText(text);
+        setCopiedId(bet.id); setTimeout(() => setCopiedId(null), 2000);
+        setShareToast("Copiado para a área de transferência!"); setTimeout(() => setShareToast(""), 3000);
+      }
     } catch (_) {}
   };
 
