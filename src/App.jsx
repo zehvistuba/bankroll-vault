@@ -1,9 +1,59 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy, Users, ImageDown, Globe, Eye, EyeOff, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy, Users, ImageDown, Globe, Eye, EyeOff, AlertTriangle, Crown, Zap } from "lucide-react";
 import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "firebase/firestore";
+const FREE_BET_LIMIT = 30;
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/CONFIGURAR_NO_STRIPE";
+
+const ProBadge = () => (
+  <span style={{ background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4, letterSpacing: 1, display: "inline-flex", alignItems: "center", gap: 3, verticalAlign: "middle" }}>
+    <Crown size={8} /> PRO
+  </span>
+);
+
+function UpgradeModal({ onClose, user }) {
+  const features = [
+    "Apostas ilimitadas (grátis: até 30)",
+    "Cards de imagem para compartilhar",
+    "Exportar histórico em CSV",
+    "Perfil público de tipster",
+    "Ranking da comunidade",
+    "Suporte prioritário",
+  ];
+  const stripeUrl = `${STRIPE_PAYMENT_LINK}?prefilled_email=${encodeURIComponent(user?.email || "")}&client_reference_id=${user?.uid || ""}`;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div className="card animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, width: "100%", padding: "36px 32px", background: "linear-gradient(180deg,rgba(245,158,11,0.07) 0%,var(--surface) 50%)", borderColor: "rgba(245,158,11,0.35)" }}>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>👑</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#f59e0b", marginBottom: 8 }}>BANCA LÓGICA PRO</div>
+          <div style={{ fontSize: 38, fontWeight: 800, color: "var(--text)", fontFamily: "var(--font-mono)", lineHeight: 1 }}>R$ 19,90</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>por mês · cancele quando quiser</div>
+        </div>
+        <div style={{ marginBottom: 28 }}>
+          {features.map(f => (
+            <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 11 }}>
+              <div style={{ width: 20, height: 20, borderRadius: "50%", background: "rgba(245,158,11,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Check size={12} color="#f59e0b" />
+              </div>
+              <span style={{ fontSize: 13, color: "var(--text)" }}>{f}</span>
+            </div>
+          ))}
+        </div>
+        <a href={stripeUrl} target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center", background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", padding: "16px", borderRadius: 10, fontSize: 15, fontWeight: 800, textDecoration: "none", marginBottom: 12, letterSpacing: 0.5 }}>
+          <Zap size={16} style={{ display: "inline", marginRight: 6, verticalAlign: "middle" }} />ASSINAR AGORA
+        </a>
+        <div style={{ textAlign: "center", fontSize: 11, color: "var(--muted)", marginBottom: 16 }}>🔒 Pagamento seguro via Stripe</div>
+        <button onClick={onClose} style={{ display: "block", width: "100%", background: "transparent", border: "none", color: "var(--muted)", fontSize: 13, cursor: "pointer", padding: 8 }}>
+          Continuar com plano gratuito →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
 const BOOKMAKERS = ["Bet365", "Betano", "Sportingbet", "Novibet", "Betnacional", "Pinnacle", "Betfair", "KTO", "Outros"];
@@ -541,6 +591,8 @@ export default function BankrollVault() {
   const [extractError, setExtractError] = useState("");
   const [formError, setFormError] = useState("");
   const [shareToast, setShareToast] = useState("");
+  const [subscription, setSubscription] = useState(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const imageInputRef = useRef(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
   const [milestoneToast, setMilestoneToast] = useState(null);
@@ -570,7 +622,7 @@ export default function BankrollVault() {
   }, []);
 
   useEffect(() => {
-    if (!user) { setBets([]); setConfig({ initialBankroll: 1000, monthlyGoal: 0 }); setGeminiKey(""); setLoaded(false); return; }
+    if (!user) { setBets([]); setConfig({ initialBankroll: 1000, monthlyGoal: 0 }); setGeminiKey(""); setSubscription(null); setLoaded(false); return; }
     setSyncError("");
     const readyFlags = { doc: false, bets: false };
     const markReady = () => { if (readyFlags.doc && readyFlags.bets) setLoaded(true); };
@@ -581,6 +633,7 @@ export default function BankrollVault() {
         const data = snap.data();
         setConfig(data.config || { initialBankroll: 1000, monthlyGoal: 0 });
         setGeminiKey(data.geminiKey || "");
+        setSubscription(data.subscription || { status: "free" });
         if (data.bets?.length > 0 && !data.betsMigrated && !migrating) {
           migrating = true;
           try {
@@ -1091,6 +1144,8 @@ export default function BankrollVault() {
 
   const pending = bets.filter(b => b.result === "pending");
   const hasSettled = bets.some(b => b.result !== "pending");
+  const isPremium = subscription?.status === "active";
+  const betLimitReached = !isPremium && bets.length >= FREE_BET_LIMIT;
 
 
   const shareBet = async (bet) => {
@@ -1192,13 +1247,28 @@ export default function BankrollVault() {
             <span className="nav-label">{label}</span>
           </button>
         ))}
+        {!isPremium && (
+          <button onClick={() => setShowUpgrade(true)} style={{ margin: "0 12px 12px", padding: "10px 14px", background: "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(249,115,22,0.08))", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 10, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10, transition: "all 0.2s" }} onMouseOver={e => e.currentTarget.style.borderColor = "#f59e0b"} onMouseOut={e => e.currentTarget.style.borderColor = "rgba(245,158,11,0.35)"}>
+            <Crown size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", letterSpacing: 0.5 }}>UPGRADE PARA PRO</div>
+              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 1 }}>{bets.length}/{FREE_BET_LIMIT} apostas usadas</div>
+            </div>
+          </button>
+        )}
+        {isPremium && (
+          <div style={{ margin: "0 12px 12px", padding: "8px 14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            <Crown size={14} color="#f59e0b" />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b" }}>PLANO PRO ATIVO</span>
+          </div>
+        )}
         <div className="sidebar-user">
           <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), var(--primary))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
             {(userDisplayName[0] || "?").toUpperCase()}
           </div>
           <div style={{ overflow: "hidden" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              Olá, {userDisplayName.split(" ")[0] || "Usuário"}!
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 6 }}>
+              {userDisplayName.split(" ")[0] || "Usuário"}{isPremium && <ProBadge />}
             </div>
             <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.email}</div>
           </div>
@@ -1437,14 +1507,14 @@ export default function BankrollVault() {
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>Gera um card de performance com seus resultados</span>
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <button onClick={async () => { setSharingStats(true); const c = await generateStatsCard(stats, userDisplayName); await shareAsImage(c, "minha-banca.png"); setSharingStats(false); }} disabled={sharingStats} style={{ display: "flex", alignItems: "center", gap: 7, background: sharingStats ? "var(--border)" : "rgba(0,212,138,0.1)", color: sharingStats ? "var(--muted)" : "var(--primary)", border: "1px solid rgba(0,212,138,0.3)", borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: sharingStats ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
-                        {sharingStats ? <><RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> GERANDO...</> : <><ImageDown size={13} /> BAIXAR CARD</>}
+                      <button onClick={isPremium ? async () => { setSharingStats(true); const c = await generateStatsCard(stats, userDisplayName); await shareAsImage(c, "minha-banca.png"); setSharingStats(false); } : () => setShowUpgrade(true)} disabled={sharingStats} style={{ display: "flex", alignItems: "center", gap: 7, background: sharingStats ? "var(--border)" : isPremium ? "rgba(0,212,138,0.1)" : "rgba(245,158,11,0.08)", color: sharingStats ? "var(--muted)" : isPremium ? "var(--primary)" : "#f59e0b", border: `1px solid ${isPremium ? "rgba(0,212,138,0.3)" : "rgba(245,158,11,0.35)"}`, borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: sharingStats ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
+                        {sharingStats ? <><RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> GERANDO...</> : isPremium ? <><ImageDown size={13} /> BAIXAR CARD</> : <><Lock size={13} /> BAIXAR CARD <ProBadge /></>}
                       </button>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: config.publicProfile ? "rgba(139,127,245,0.1)" : "rgba(0,0,0,0.2)", border: `1px solid ${config.publicProfile ? "rgba(139,127,245,0.4)" : "var(--border)"}`, borderRadius: 8, cursor: "pointer", transition: "all 0.2s" }}
-                        onClick={() => { const np = !config.publicProfile; saveConfig({ ...config, publicProfile: np }); syncPublicProfile(np); }}>
-                        <Globe size={13} color={config.publicProfile ? "var(--accent)" : "var(--muted)"} />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: config.publicProfile ? "var(--accent)" : "var(--muted)" }}>
-                          {config.publicProfile ? "Perfil público ✓" : "Tornar público"}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: isPremium && config.publicProfile ? "rgba(139,127,245,0.1)" : "rgba(0,0,0,0.2)", border: `1px solid ${isPremium && config.publicProfile ? "rgba(139,127,245,0.4)" : "var(--border)"}`, borderRadius: 8, cursor: "pointer", transition: "all 0.2s" }}
+                        onClick={() => { if (!isPremium) { setShowUpgrade(true); return; } const np = !config.publicProfile; saveConfig({ ...config, publicProfile: np }); syncPublicProfile(np); }}>
+                        {isPremium ? <Globe size={13} color={config.publicProfile ? "var(--accent)" : "var(--muted)"} /> : <Lock size={13} color="var(--muted)" />}
+                        <span style={{ fontSize: 12, fontWeight: 600, color: isPremium && config.publicProfile ? "var(--accent)" : "var(--muted)" }}>
+                          {isPremium ? (config.publicProfile ? "Perfil público ✓" : "Tornar público") : "Tornar público"}{!isPremium && <> <ProBadge /></>}
                         </span>
                       </div>
                     </div>
@@ -1472,9 +1542,23 @@ export default function BankrollVault() {
             </>}
 
             {/* REGISTRAR */}
-            {view === "register" && <div className="card" style={{ maxWidth: 800, margin: "0 auto" }}>
+            {view === "register" && betLimitReached && !editingBet && (
+              <div className="card animate-fade-in" style={{ maxWidth: 600, margin: "0 auto", textAlign: "center", padding: "52px 32px", borderColor: "rgba(245,158,11,0.35)", background: "linear-gradient(180deg,rgba(245,158,11,0.06) 0%,var(--surface) 60%)" }}>
+                <div style={{ fontSize: 52, marginBottom: 16 }}>🔒</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Limite de {FREE_BET_LIMIT} apostas atingido</div>
+                <div style={{ color: "var(--muted)", marginBottom: 28, lineHeight: 1.7, fontSize: 14 }}>
+                  Você registrou <strong style={{ color: "var(--text)" }}>{bets.length} apostas</strong> no plano gratuito.<br />
+                  Faça upgrade para apostas ilimitadas e muito mais.
+                </div>
+                <button onClick={() => setShowUpgrade(true)} style={{ background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", border: "none", padding: "16px 40px", borderRadius: 10, fontSize: 15, fontWeight: 800, cursor: "pointer", marginBottom: 16 }}>
+                  <Crown size={16} style={{ display: "inline", marginRight: 8, verticalAlign: "middle" }} />VER PLANO PRO
+                </button>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>ou <button onClick={() => setView("history")} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", padding: 0, fontSize: 12 }}>ver histórico de apostas</button></div>
+              </div>
+            )}
+            {view === "register" && (!betLimitReached || editingBet) && <div className="card" style={{ maxWidth: 800, margin: "0 auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <span className="section-title" style={{ margin: 0 }}>{editingBet ? "EDITAR APOSTA" : "NOVA APOSTA"}</span>
+                <span className="section-title" style={{ margin: 0 }}>{editingBet ? "EDITAR APOSTA" : `NOVA APOSTA ${!isPremium ? `(${bets.length}/${FREE_BET_LIMIT})` : ""}`}</span>
                 {editingBet && (
                   <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setExtractError(""); setView("history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
                 )}
@@ -1693,10 +1777,10 @@ export default function BankrollVault() {
                     <option value="stake_desc">Maior stake</option>
                   </select>
                   {filteredBets.length > 0 && (
-                    <button onClick={exportCSV} title="Exportar CSV" style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 10, padding: "10px 14px", fontSize: 12, cursor: "pointer", fontWeight: 600, transition: "all 0.2s", whiteSpace: "nowrap" }}
-                      onMouseOver={e => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.borderColor = "var(--primary)"; }}
+                    <button onClick={isPremium ? exportCSV : () => setShowUpgrade(true)} title={isPremium ? "Exportar CSV" : "CSV disponível no plano Pro"} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: isPremium ? "var(--muted)" : "var(--muted)", borderRadius: 10, padding: "10px 14px", fontSize: 12, cursor: "pointer", fontWeight: 600, transition: "all 0.2s", whiteSpace: "nowrap", opacity: isPremium ? 1 : 0.75 }}
+                      onMouseOver={e => { e.currentTarget.style.color = isPremium ? "var(--primary)" : "#f59e0b"; e.currentTarget.style.borderColor = isPremium ? "var(--primary)" : "#f59e0b"; }}
                       onMouseOut={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
-                      <Download size={13} /> CSV
+                      {isPremium ? <Download size={13} /> : <Lock size={13} />} CSV {!isPremium && <ProBadge />}
                     </button>
                   )}
                 </div>
@@ -1750,8 +1834,8 @@ export default function BankrollVault() {
                           </button>
                         )}
                         {deletingId !== bet.id && (
-                          <button onClick={async () => { setSharingBetId(null); setSharingBetId(bet.id); try { const timeout = new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 10000)); const c = await Promise.race([generateBetCard(bet), timeout]); await shareAsImage(c, `aposta-${bet.date}.png`); setShareToast("Card gerado! ✓"); } catch(_e) { setShareToast("Não foi possível gerar o card."); } finally { setSharingBetId(null); setTimeout(() => setShareToast(""), 4000); } }} title="Salvar como imagem" style={{ background: "transparent", border: "none", color: sharingBetId === bet.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--accent)"; }} onMouseOut={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
-                            {sharingBetId === bet.id ? <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} /> : <ImageDown size={15} />}
+                          <button onClick={isPremium ? async () => { setSharingBetId(null); setSharingBetId(bet.id); try { const timeout = new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 10000)); const c = await Promise.race([generateBetCard(bet), timeout]); await shareAsImage(c, `aposta-${bet.date}.png`); setShareToast("Card gerado! ✓"); } catch(_e) { setShareToast("Não foi possível gerar o card."); } finally { setSharingBetId(null); setTimeout(() => setShareToast(""), 4000); } } : () => setShowUpgrade(true)} title={isPremium ? "Salvar como imagem" : "Card de imagem — plano Pro"} style={{ background: "transparent", border: "none", color: sharingBetId === bet.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", padding: 8, borderRadius: 4, display: "flex", transition: "color 0.2s" }} onMouseOver={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = isPremium ? "var(--accent)" : "#f59e0b"; }} onMouseOut={e => { if (sharingBetId !== bet.id) e.currentTarget.style.color = "var(--muted)"; }}>
+                            {sharingBetId === bet.id ? <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} /> : isPremium ? <ImageDown size={15} /> : <Lock size={15} />}
                           </button>
                         )}
                         {deletingId !== bet.id && (
@@ -2003,6 +2087,8 @@ export default function BankrollVault() {
           </div>
         </div>
       </div>
+
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} user={user} />}
 
       {shareToast && (
         <div className="animate-fade-in" style={{ position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.85)", color: "#fff", padding: "10px 20px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 2000, whiteSpace: "nowrap", border: "1px solid rgba(255,255,255,0.1)" }}>
