@@ -5,7 +5,7 @@ import { auth, db, googleProvider } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "firebase/firestore";
 const FREE_BET_LIMIT = 30;
-const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/CONFIGURAR_NO_STRIPE";
+const HOTMART_CHECKOUT_URL = "https://pay.hotmart.com/CONFIGURAR_NO_HOTMART";
 
 const ProBadge = () => (
   <span style={{ background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4, letterSpacing: 1, display: "inline-flex", alignItems: "center", gap: 3, verticalAlign: "middle" }}>
@@ -22,7 +22,7 @@ function UpgradeModal({ onClose, user }) {
     "Ranking da comunidade",
     "Suporte prioritário",
   ];
-  const stripeUrl = `${STRIPE_PAYMENT_LINK}?prefilled_email=${encodeURIComponent(user?.email || "")}&client_reference_id=${user?.uid || ""}`;
+  const hotmartUrl = `${HOTMART_CHECKOUT_URL}?email=${encodeURIComponent(user?.email || "")}`;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
       <div className="card animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, width: "100%", padding: "36px 32px", background: "linear-gradient(180deg,rgba(245,158,11,0.07) 0%,var(--surface) 50%)", borderColor: "rgba(245,158,11,0.35)" }}>
@@ -42,10 +42,10 @@ function UpgradeModal({ onClose, user }) {
             </div>
           ))}
         </div>
-        <a href={stripeUrl} target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center", background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", padding: "16px", borderRadius: 10, fontSize: 15, fontWeight: 800, textDecoration: "none", marginBottom: 12, letterSpacing: 0.5 }}>
+        <a href={hotmartUrl} target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center", background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", padding: "16px", borderRadius: 10, fontSize: 15, fontWeight: 800, textDecoration: "none", marginBottom: 12, letterSpacing: 0.5 }}>
           <Zap size={16} style={{ display: "inline", marginRight: 6, verticalAlign: "middle" }} />ASSINAR AGORA
         </a>
-        <div style={{ textAlign: "center", fontSize: 11, color: "var(--muted)", marginBottom: 16 }}>🔒 Pagamento seguro via Stripe</div>
+        <div style={{ textAlign: "center", fontSize: 11, color: "var(--muted)", marginBottom: 16 }}>🔒 Pagamento seguro via Hotmart</div>
         <button onClick={onClose} style={{ display: "block", width: "100%", background: "transparent", border: "none", color: "var(--muted)", fontSize: 13, cursor: "pointer", padding: 8 }}>
           Continuar com plano gratuito →
         </button>

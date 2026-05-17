@@ -1,100 +1,101 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
-const { Stripe } = require("stripe");
 
 admin.initializeApp();
 const db = admin.firestore();
+const auth = admin.auth();
 
-const stripeSecret = defineSecret("STRIPE_SECRET_KEY");
-const stripeWebhookSecret = defineSecret("STRIPE_WEBHOOK_SECRET");
+const hotmartToken = defineSecret("HOTMART_WEBHOOK_TOKEN");
 
-// Creates a Stripe Checkout Session and returns the URL
-exports.createCheckoutSession = onRequest(
-  { secrets: [stripeSecret], cors: ["https://bankroll-vault.pages.dev"] },
+const ACTIVE_EVENTS = ["PURCHASE_APPROVED", "PURCHASE_COMPLETE"];
+const INACTIVE_EVENTS = [
+  "PURCHASE_REFUNDED",
+  "PURCHASE_CHARGEBACK",
+  "PURCHASE_CANCELED",
+  "SUBSCRIPTION_CANCELLATION",
+];
+
+exports.hotmartWebhook = onRequest(
+  {
+    secrets: [hotmartToken],
+    cors: false,
+  },
   async (req, res) => {
     if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-    const { uid, email } = req.body;
-    if (!uid || !email) return res.status(400).json({ error: "uid e email são obrigatórios" });
-
-    const stripe = new Stripe(stripeSecret.value());
-    try {
-      const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
-        payment_method_types: ["card"],
-        line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-        customer_email: email,
-        metadata: { firebaseUID: uid },
-        success_url: `https://bankroll-vault.pages.dev/?payment=success`,
-        cancel_url: `https://bankroll-vault.pages.dev/?payment=cancelled`,
-      });
-      res.json({ url: session.url });
-    } catch (err) {
-      console.error("Checkout session error:", err);
-      res.status(500).json({ error: err.message });
-    }
-  }
-);
-
-// Receives Stripe webhook events and updates Firestore
-exports.stripeWebhook = onRequest(
-  { secrets: [stripeSecret, stripeWebhookSecret], rawBody: true },
-  async (req, res) => {
-    const sig = req.headers["stripe-signature"];
-    const stripe = new Stripe(stripeSecret.value());
-
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(req.rawBody, sig, stripeWebhookSecret.value());
-    } catch (err) {
-      console.error("Webhook signature error:", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+    // Hotmart envia o token como query param ?hottok=TOKEN
+    const receivedToken = req.query.hottok || req.headers["x-hotmart-webhook-token"];
+    if (!receivedToken || receivedToken !== hotmartToken.value()) {
+      console.error("❌ Token Hotmart inválido");
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const obj = event.data.object;
+    const { event, data } = req.body;
+    if (!event || !data) {
+      console.error("❌ Payload inválido:", req.body);
+      return res.status(400).json({ error: "Payload inválido" });
+    }
+
+    const email = data.buyer?.email;
+    if (!email) {
+      console.log(`⚠️ Evento ${event} sem email — ignorado`);
+      return res.json({ received: true });
+    }
+
+    console.log(`📨 Evento: ${event} | Comprador: ${email}`);
 
     try {
-      if (event.type === "checkout.session.completed") {
-        const uid = obj.metadata?.firebaseUID;
-        if (!uid) return res.json({ received: true });
-
-        await db.doc(`users/${uid}`).set({
-          subscription: {
-            status: "active",
-            stripeCustomerId: obj.customer,
-            stripeSubscriptionId: obj.subscription,
-            currentPeriodEnd: null,
-          }
-        }, { merge: true });
-        console.log(`✅ Usuário ${uid} ativado como Pro`);
+      // Busca o usuário Firebase pelo email do comprador Hotmart
+      let uid;
+      try {
+        const userRecord = await auth.getUserByEmail(email);
+        uid = userRecord.uid;
+      } catch {
+        // Usuário ainda não tem conta — salva numa coleção pendente
+        // para ativar quando ele se cadastrar
+        await db.doc(`pendingSubscriptions/${email.replace("@", "_at_")}`).set({
+          email,
+          event,
+          hotmartCode: data.subscription?.subscriber?.code || data.purchase?.transaction || null,
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log(`⚠️ Sem conta Firebase para ${email} — salvo como pendente`);
+        return res.json({ received: true, status: "pending" });
       }
 
-      if (event.type === "customer.subscription.updated") {
-        const snap = await db.collection("users")
-          .where("subscription.stripeCustomerId", "==", obj.customer)
-          .limit(1).get();
-        if (!snap.empty) {
-          await snap.docs[0].ref.update({
-            "subscription.status": obj.status === "active" ? "active" : "free",
-            "subscription.currentPeriodEnd": obj.current_period_end,
-          });
-        }
+      const hotmartCode =
+        data.subscription?.subscriber?.code ||
+        data.purchase?.transaction ||
+        null;
+
+      if (ACTIVE_EVENTS.includes(event)) {
+        await db.doc(`users/${uid}`).set(
+          {
+            subscription: {
+              status: "active",
+              hotmartEmail: email,
+              hotmartCode,
+              activatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              cancelledAt: null,
+            },
+          },
+          { merge: true }
+        );
+        console.log(`✅ PRO ativado: uid=${uid} email=${email}`);
       }
 
-      if (event.type === "customer.subscription.deleted") {
-        const snap = await db.collection("users")
-          .where("subscription.stripeCustomerId", "==", obj.customer)
-          .limit(1).get();
-        if (!snap.empty) {
-          await snap.docs[0].ref.update({ "subscription.status": "free" });
-          console.log(`⚠️ Assinatura cancelada: ${obj.customer}`);
-        }
+      if (INACTIVE_EVENTS.includes(event)) {
+        await db.doc(`users/${uid}`).update({
+          "subscription.status": "free",
+          "subscription.cancelledAt": admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log(`⚠️ PRO cancelado: uid=${uid} email=${email}`);
       }
 
-      res.json({ received: true });
+      res.json({ received: true, uid, event });
     } catch (err) {
-      console.error("Webhook processing error:", err);
+      console.error("❌ Erro no webhook:", err);
       res.status(500).json({ error: err.message });
     }
   }
