@@ -1160,6 +1160,140 @@ export default function BankrollVault() {
     if (!dismissed.includes(id)) saveConfig({ ...config, dismissedAlerts: [...dismissed, id] });
   }, [config, saveConfig]);
 
+  const exportPDF = useCallback(async () => {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const W = 210, M = 16;
+    let y = 0;
+
+    doc.setFillColor(0, 212, 138);
+    doc.rect(0, 0, W, 14, "F");
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text("BANCA LÓGICA", M, 9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")}`, W - M, 9, { align: "right" });
+
+    y = 24;
+    doc.setTextColor(20, 20, 30);
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.text("RELATÓRIO DE PERFORMANCE", M, y);
+    y += 3;
+    doc.setDrawColor(0, 212, 138);
+    doc.setLineWidth(0.5);
+    doc.line(M, y, W - M, y);
+    y += 9;
+
+    const kpis = [
+      { label: "ROI", val: `${stats.roi >= 0 ? "+" : ""}${stats.roi.toFixed(2)}%`, pos: stats.roi >= 0 },
+      { label: "YIELD", val: `${stats.yield >= 0 ? "+" : ""}${stats.yield.toFixed(2)}%`, pos: stats.yield >= 0 },
+      { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, pos: true },
+      { label: "APOSTAS / V / D", val: `${stats.totalBets} / ${stats.wins} / ${stats.losses}`, pos: true },
+      { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : ""}R$${Math.round(stats.totalPL)}`, pos: stats.totalPL >= 0 },
+      { label: "BANCA ATUAL", val: `R$${Math.round(stats.currentBankroll)}`, pos: true },
+    ];
+    const colW = (W - 2 * M) / 3;
+    kpis.forEach(({ label, val, pos }, i) => {
+      const col = i % 3, row = Math.floor(i / 3);
+      const bx = M + col * colW, by = y + row * 20;
+      doc.setFillColor(242, 242, 248);
+      doc.roundedRect(bx, by, colW - 4, 17, 2, 2, "F");
+      doc.setFontSize(6);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(130, 130, 145);
+      doc.text(label, bx + 4, by + 5.5);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...(pos ? [0, 150, 90] : [190, 50, 65]));
+      doc.text(val, bx + 4, by + 13);
+    });
+    y += 2 * 20 + 6;
+
+    if (monthlyData.length > 0) {
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(20, 20, 30);
+      doc.text("P&L MENSAL", M, y);
+      y += 5;
+      const chartH = 38, chartW = W - 2 * M;
+      const maxAbs = Math.max(...monthlyData.map(m => Math.abs(m.pl)), 1);
+      const barSpacing = chartW / monthlyData.length;
+      const barW = Math.min(barSpacing - 2, 14);
+      const baseline = y + chartH / 2;
+      doc.setDrawColor(200, 200, 210);
+      doc.setLineWidth(0.3);
+      doc.line(M, baseline, M + chartW, baseline);
+      monthlyData.forEach((m, i) => {
+        const bx = M + i * barSpacing + (barSpacing - barW) / 2;
+        const h = Math.max((Math.abs(m.pl) / maxAbs) * (chartH / 2 - 3), 0.5);
+        if (m.pl >= 0) { doc.setFillColor(0, 180, 100); doc.rect(bx, baseline - h, barW, h, "F"); }
+        else { doc.setFillColor(210, 50, 70); doc.rect(bx, baseline, barW, h, "F"); }
+        doc.setFontSize(5);
+        doc.setTextColor(110, 110, 125);
+        doc.setFont("helvetica", "normal");
+        doc.text(m.label, bx + barW / 2, y + chartH + 4, { align: "center" });
+      });
+      y += chartH + 12;
+    }
+
+    if (y > 220) { doc.addPage(); y = 20; }
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(20, 20, 30);
+    doc.text("HISTÓRICO DE APOSTAS", M, y);
+    y += 5;
+
+    const headers = ["DATA", "EVENTO", "ODDS", "STAKE", "P&L"];
+    const cw = [22, 72, 16, 24, 22];
+    const rowH = 6.5;
+    doc.setFillColor(0, 212, 138);
+    doc.rect(M, y, W - 2 * M, rowH, "F");
+    doc.setFontSize(6);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(10, 10, 20);
+    let cx = M + 2;
+    headers.forEach((h, i) => { doc.text(h, cx, y + 4.3); cx += cw[i]; });
+    y += rowH;
+
+    const settled = bets.filter(b => b.result !== "pending").sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 60);
+    settled.forEach((bet, idx) => {
+      if (y > 275) { doc.addPage(); y = 20; }
+      doc.setFillColor(idx % 2 === 0 ? 252 : 246, idx % 2 === 0 ? 252 : 246, idx % 2 === 0 ? 254 : 252);
+      doc.rect(M, y, W - 2 * M, rowH, "F");
+      const pl = getBetPL(bet);
+      const vals = [
+        bet.date || "—",
+        (bet.event || bet.competition || "—").substring(0, 38),
+        bet.odds ? Number(bet.odds).toFixed(2) : "—",
+        `R$${Number(bet.stake || 0).toFixed(0)}`,
+        `${pl >= 0 ? "+" : ""}R$${Math.round(pl)}`,
+      ];
+      doc.setFontSize(6);
+      doc.setFont("helvetica", "normal");
+      cx = M + 2;
+      vals.forEach((v, i) => {
+        doc.setTextColor(...(i === 4 ? (pl >= 0 ? [0, 140, 80] : [190, 50, 65]) : [40, 40, 55]));
+        doc.text(String(v), cx, y + 4.3);
+        cx += cw[i];
+      });
+      y += rowH;
+    });
+
+    const pageCount = doc.getNumberOfPages();
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p);
+      doc.setFontSize(6);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(160, 160, 175);
+      doc.text("banca-logica.com", W / 2, 292, { align: "center" });
+      doc.text(`Página ${p} de ${pageCount}`, W - M, 292, { align: "right" });
+    }
+
+    doc.save(`banca-logica-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }, [bets, stats, monthlyData]);
+
   const finishOnboarding = useCallback(() => {
     setOnboardStep(0);
     saveConfig({ ...config, onboardingCompleted: true });
@@ -2234,7 +2368,17 @@ export default function BankrollVault() {
 
             {/* ANÁLISE */}
             {view === "analyze" && <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-              <span className="section-title" style={{ marginBottom: 24 }}>ANÁLISE DE PERFORMANCE</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+                <span className="section-title" style={{ marginBottom: 0 }}>ANÁLISE DE PERFORMANCE</span>
+                {isPremium
+                  ? <button onClick={exportPDF} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <Download size={13} />Exportar PDF
+                    </button>
+                  : <button onClick={() => setShowUpgrade(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <Crown size={13} />PDF PRO
+                    </button>
+                }
+              </div>
               <>
                 <div style={{ display: "flex", gap: 12, marginBottom: 24, overflowX: "auto", paddingBottom: 8 }}>
                   {tabBtn("ia", "Inteligência IA")}
