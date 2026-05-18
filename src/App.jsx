@@ -56,6 +56,63 @@ function UpgradeModal({ onClose, user }) {
   );
 }
 
+function OnboardingModal({ step, banca, onBancaChange, onNext, onClose, onGoRegister, onGoAnalyze }) {
+  const steps = [
+    { emoji: "👋", title: "Bem-vindo à Banca Lógica!", sub: "Configure sua banca em 2 minutos e comece a acompanhar seu desempenho.", label: "1 / 3" },
+    { emoji: "📝", title: "Registre sua primeira aposta", sub: "Adicione manualmente ou importe um screenshot do seu cupom — a IA preenche tudo automaticamente.", label: "2 / 3" },
+    { emoji: "🤖", title: "Análise inteligente com IA", sub: "Configure o Google Gemini gratuitamente e receba insights sobre seu desempenho, padrões e erros.", label: "3 / 3" },
+  ];
+  const s = steps[step - 1];
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div className="card animate-fade-in" style={{ maxWidth: 420, width: "100%", padding: "40px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "var(--muted)", marginBottom: 16 }}>{s.label}</div>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 24 }}>
+          {[1,2,3].map(i => (
+            <div key={i} style={{ height: 3, width: i === step ? 32 : 16, borderRadius: 4, background: i === step ? "var(--primary)" : i < step ? "var(--primary)" : "var(--border)", transition: "all 0.3s" }} />
+          ))}
+        </div>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>{s.emoji}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>{s.title}</div>
+        <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7, marginBottom: 28 }}>{s.sub}</div>
+
+        {step === 1 && (
+          <div style={{ marginBottom: 24, textAlign: "left" }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", letterSpacing: 1, marginBottom: 8 }}>BANCA INICIAL (R$)</div>
+            <input
+              type="number" min="1" value={banca} onChange={e => onBancaChange(e.target.value)}
+              className="input" style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--font-mono)", textAlign: "center", color: "var(--primary)" }}
+              placeholder="1000" autoFocus
+            />
+          </div>
+        )}
+
+        {step === 1 && (
+          <button className="btn" style={{ width: "100%", marginBottom: 12 }} onClick={onNext}>
+            Confirmar banca →
+          </button>
+        )}
+        {step === 2 && <>
+          <button className="btn" style={{ width: "100%", marginBottom: 12 }} onClick={onGoRegister}>
+            Registrar primeira aposta →
+          </button>
+          <button onClick={onNext} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 13, cursor: "pointer", padding: 8, width: "100%" }}>
+            Farei depois
+          </button>
+        </>}
+        {step === 3 && <>
+          <button className="btn" style={{ width: "100%", marginBottom: 12 }} onClick={onGoAnalyze}>
+            Ir para Análise →
+          </button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 13, cursor: "pointer", padding: 8, width: "100%" }}>
+            Concluir configuração
+          </button>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
 const BOOKMAKERS = ["Bet365", "Betano", "Sportingbet", "Novibet", "Betnacional", "Pinnacle", "Betfair", "KTO", "Outros"];
@@ -603,6 +660,9 @@ export default function BankrollVault() {
   const [shareToast, setShareToast] = useState("");
   const [subscription, setSubscription] = useState(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [onboardStep, setOnboardStep] = useState(0);
+  const [onboardBanca, setOnboardBanca] = useState("1000");
+  const onboardingChecked = useRef(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminSearch, setAdminSearch] = useState("");
   const [adminUser, setAdminUser] = useState(null);
@@ -841,6 +901,15 @@ export default function BankrollVault() {
       setAuthInProgress(false);
     }
   };
+
+  useEffect(() => {
+    if (!loaded || onboardingChecked.current) return;
+    onboardingChecked.current = true;
+    if (config.onboardingCompleted) return;
+    if (bets.length > 0) { saveConfig({ ...config, onboardingCompleted: true }); return; }
+    setOnboardBanca(String(config.initialBankroll || "1000"));
+    setOnboardStep(1);
+  }, [loaded]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -1296,6 +1365,23 @@ export default function BankrollVault() {
     } finally { setAdminLoading(false); }
   };
 
+  const finishOnboarding = useCallback(() => {
+    setOnboardStep(0);
+    saveConfig({ ...config, onboardingCompleted: true });
+  }, [config, saveConfig]);
+
+  const onboardNext = useCallback(() => {
+    if (onboardStep === 1) {
+      const val = parseFloat(onboardBanca);
+      if (val > 0) saveConfig({ ...config, initialBankroll: val });
+      setOnboardStep(2);
+    } else if (onboardStep === 2) {
+      setOnboardStep(3);
+    } else {
+      finishOnboarding();
+    }
+  }, [onboardStep, onboardBanca, config, saveConfig, finishOnboarding]);
+
   const VALID_ROUTES = ["dashboard", "register", "history", "analyze", "kelly", "admin"];
   useEffect(() => {
     if (!loaded) return;
@@ -1411,6 +1497,19 @@ export default function BankrollVault() {
           </div>
 
           <div className="animate-fade-in">
+            {/* 15-BETS UPGRADE BANNER */}
+            {!isPremium && bets.length >= 15 && bets.length < FREE_BET_LIMIT && !config.dismissed15Banner && (
+              <div className="animate-fade-in" style={{ display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(135deg,rgba(245,158,11,0.1),rgba(249,115,22,0.06))", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 20 }}>🔥</span>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Você já tem {bets.length} apostas registradas!</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Desbloqueie apostas ilimitadas, CSV, cards e análise IA com o plano PRO.</div>
+                </div>
+                <button onClick={() => setShowUpgrade(true)} style={{ background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>VER PLANO PRO</button>
+                <button onClick={() => saveConfig({ ...config, dismissed15Banner: true })} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 4, display: "flex", flexShrink: 0 }}><X size={16} /></button>
+              </div>
+            )}
+
             {/* DASHBOARD */}
             {view === "dashboard" && <>
               <div className="grid-4">
@@ -2231,6 +2330,17 @@ export default function BankrollVault() {
         </div>
       </div>
 
+      {onboardStep > 0 && (
+        <OnboardingModal
+          step={onboardStep}
+          banca={onboardBanca}
+          onBancaChange={setOnboardBanca}
+          onNext={onboardNext}
+          onClose={finishOnboarding}
+          onGoRegister={() => { finishOnboarding(); navigate("/register"); }}
+          onGoAnalyze={() => { finishOnboarding(); navigate("/analyze"); }}
+        />
+      )}
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} user={user} />}
 
       {shareToast && (
