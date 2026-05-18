@@ -322,6 +322,7 @@ function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKe
   const [error, setError] = useState("");
   const [draftKey, setDraftKey] = useState(apiKey);
   const [isEditingKey, setIsEditingKey] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [model, setModel] = useState(() => localStorage.getItem("gemini_model") || "gemini-2.5-flash");
   const settled = bets.filter(b => b.result !== "pending");
 
@@ -466,7 +467,12 @@ function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, onApiKe
             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "none", borderBottom: "1px solid rgba(139,127,245,0.4)" }}>Obter chave gratuita no AI Studio →</a>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input type="password" value={draftKey} onChange={e => setDraftKey(e.target.value)} onKeyDown={e => e.key === "Enter" && saveKey()} placeholder="AIzaSy..." className="input" style={{ flex: 1, minWidth: 200 }} />
+            <div style={{ flex: 1, minWidth: 200, position: "relative", display: "flex" }}>
+              <input type={showApiKey ? "text" : "password"} value={draftKey} onChange={e => setDraftKey(e.target.value)} onKeyDown={e => e.key === "Enter" && saveKey()} placeholder="AIzaSy..." className="input" style={{ flex: 1, paddingRight: 40 }} autoComplete="new-password" />
+              <button type="button" onClick={() => setShowApiKey(v => !v)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 4, display: "flex" }}>
+                {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
             <button className="btn" onClick={saveKey} style={{ width: "auto", padding: "0 24px" }}>SALVAR</button>
             {apiKey && <button className="outline-btn muted" onClick={() => setIsEditingKey(false)} style={{ whiteSpace: "nowrap", padding: "0 16px" }}>CANCELAR</button>}
           </div>
@@ -765,9 +771,13 @@ export default function BankrollVault() {
   };
 
   const handleGoogleLogin = async () => {
+    setAuthInProgress(true);
+    setAuthError("");
+    const timer = setTimeout(() => {
+      setAuthInProgress(false);
+      setAuthError("Tempo esgotado. Verifique se popups estão permitidos neste site e tente novamente.");
+    }, 15000);
     try {
-      setAuthInProgress(true);
-      setAuthError("");
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       setAuthInProgress(false);
@@ -776,6 +786,8 @@ export default function BankrollVault() {
       } else if (err.code !== "auth/popup-closed-by-user") {
         setAuthError("Erro ao fazer login com Google: " + err.message);
       }
+    } finally {
+      clearTimeout(timer);
     }
   };
 
@@ -990,7 +1002,7 @@ export default function BankrollVault() {
 
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
               <span style={{ color: "var(--muted)" }}>{isRegistering ? "Já tem conta?" : "Não tem conta?"} </span>
-              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); setNome(""); setForgotPasswordSent(false); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); setNome(""); setPassword(""); setForgotPasswordSent(false); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
                 {isRegistering ? "Faça login" : "Cadastre-se"}
               </button>
             </div>
@@ -1165,16 +1177,16 @@ export default function BankrollVault() {
       bet.result === "win" ? `✅ Green: +${fmt(pl)}` : bet.result === "loss" ? `❌ Red: -${fmt(Math.abs(pl))}` : `⏳ Pendente`,
     ];
     const text = lines.join("\n");
-    try {
-      if (navigator.share) {
-        try { await navigator.share({ text }); } catch (_) {}
-        setShareToast("Copiado!"); setTimeout(() => setShareToast(""), 3000);
-      } else {
+    if (navigator.share) {
+      try { await navigator.share({ text }); } catch (_) {}
+    } else {
+      try {
         await navigator.clipboard.writeText(text);
         setCopiedId(bet.id); setTimeout(() => setCopiedId(null), 2000);
-        setShareToast("Copiado para a área de transferência!"); setTimeout(() => setShareToast(""), 3000);
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
+    setShareToast("Copiado para a área de transferência!");
+    setTimeout(() => setShareToast(""), 3000);
   };
 
   const exportCSV = () => {
