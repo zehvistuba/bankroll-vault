@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { LayoutDashboard, Plus, List, Calculator, BarChart2, Sparkles, RefreshCw, Check, X, Info, Layers, LogOut, Mail, Lock, User, Edit2, Search, Camera, Download, Target, TrendingUp, TrendingDown, Sun, Moon, Share2, CalendarDays, ChevronLeft, ChevronRight, Trophy, Users, ImageDown, Globe, Eye, EyeOff, AlertTriangle, Crown, Zap, Shield, UserCheck, UserX } from "lucide-react";
 import { auth, db, googleProvider, fns } from "./firebase";
@@ -574,7 +575,9 @@ function BalanceDisplay({ value, onChange }) {
 }
 
 export default function BankrollVault() {
-  const [view, setView] = useState("dashboard");
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const view = pathname.replace(/^\//, "") || "dashboard";
   const [loaded, setLoaded] = useState(false);
   const [analyzeTab, setAnalyzeTab] = useState("ia");
   const [user, setUser] = useState(null);
@@ -1132,11 +1135,11 @@ export default function BankrollVault() {
         await setDoc(doc(db, "users", user.uid, "bets", id), { ...data, id });
       }
       localStorage.setItem("lastBookmaker", form.bookmaker);
-      const dest = editingBet ? "history" : "dashboard";
+      const dest = editingBet ? "/history" : "/dashboard";
       setEditingBet(null);
       setForm(defaultForm());
       setFormError("");
-      setView(dest);
+      navigate(dest);
     } catch (err) { setSyncError("Erro ao salvar aposta: " + err.message); }
   };
 
@@ -1158,7 +1161,7 @@ export default function BankrollVault() {
         ? bet.selections.map(s => ({ ...s, odds: String(s.odds) }))
         : [defaultSelection(), defaultSelection()],
     });
-    setView("register");
+    navigate("/register");
   };
 
   const pending = bets.filter(b => b.result === "pending");
@@ -1266,6 +1269,13 @@ export default function BankrollVault() {
     } finally { setAdminLoading(false); }
   };
 
+  const VALID_ROUTES = ["dashboard", "register", "history", "analyze", "kelly", "admin"];
+  useEffect(() => {
+    if (!loaded) return;
+    if (view === "admin" && !isAdmin) { navigate("/dashboard", { replace: true }); return; }
+    if (!VALID_ROUTES.includes(view)) { navigate("/dashboard", { replace: true }); }
+  }, [view, isAdmin, loaded]);
+
   const tabBtn = (id, label) => (
     <button key={id} onClick={() => setAnalyzeTab(id)} style={{ flex: 1, background: analyzeTab === id ? "var(--primary)" : "rgba(0,0,0,0.2)", color: analyzeTab === id ? "#000" : "var(--muted)", border: `1px solid ${analyzeTab === id ? "var(--primary)" : "var(--border)"}`, borderRadius: 6, padding: "10px 0", fontSize: 11, cursor: "pointer", fontFamily: "var(--font-sans)", fontWeight: 600, textTransform: "uppercase", transition: "all 0.2s ease", whiteSpace: "nowrap" }}>{label}</button>
   );
@@ -1284,7 +1294,7 @@ export default function BankrollVault() {
           </div>
         </div>
         {NAV.map(({ id, icon: Icon, label }) => (
-          <button key={id} className={`nav-btn ${view === id ? "active" : ""}`} onClick={() => setView(id)}>
+          <button key={id} className={`nav-btn ${view === id ? "active" : ""}`} onClick={() => navigate("/" + id)}>
             <div style={{ position: "relative" }}>
               <Icon size={20} />
               {id === "dashboard" && pending.length > 0 && (
@@ -1361,7 +1371,7 @@ export default function BankrollVault() {
         {/* DESKTOP HEADER INFO */}
         <div className="main-content">
           <div className="desktop-header-info" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
-            <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text)" }}>{NAV.find(n => n.id === view)?.label}</h2>
+            <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: "var(--text)" }}>{NAV.find(n => n.id === view)?.label ?? (view === "admin" ? "Admin" : "")}</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <BalanceDisplay value={stats.currentBankroll} onChange={v => { const nc = { ...config, initialBankroll: v - stats.totalPL }; saveConfig(nc); }} />
               <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="Alternar tema" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", padding: 8, borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }}>
@@ -1409,8 +1419,8 @@ export default function BankrollVault() {
                   </div>
                   <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
                     {[{ e: "💰", t: "1. Defina sua banca", d: "Toque no saldo no canto superior para ajustar o valor inicial.", a: null },
-                      { e: "📝", t: "2. Registre apostas", d: "Manualmente ou importe por foto do cupom com IA.", a: () => setView("register") },
-                      { e: "🤖", t: "3. Ative a IA", d: "Configure o Gemini para análises automáticas de performance.", a: () => setView("analyze") }].map((s, i) => (
+                      { e: "📝", t: "2. Registre apostas", d: "Manualmente ou importe por foto do cupom com IA.", a: () => navigate("/register") },
+                      { e: "🤖", t: "3. Ative a IA", d: "Configure o Gemini para análises automáticas de performance.", a: () => navigate("/analyze") }].map((s, i) => (
                       <div key={i} onClick={s.a || undefined} style={{ flex: "1 1 160px", background: "rgba(0,0,0,0.2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 12px", textAlign: "center", cursor: s.a ? "pointer" : "default", transition: "border-color 0.2s" }}
                         onMouseOver={e => s.a && (e.currentTarget.style.borderColor = "rgba(139,127,245,0.5)")}
                         onMouseOut={e => s.a && (e.currentTarget.style.borderColor = "var(--border)")}>
@@ -1585,7 +1595,7 @@ export default function BankrollVault() {
                 <div className="empty-state">
                   <div style={{ fontSize: 48, marginBottom: 16, color: "var(--border)" }}><LayoutDashboard size={48} /></div>
                   <div style={{ fontSize: 16, marginBottom: 24, fontWeight: 500 }}>Nenhuma aposta registrada ainda.</div>
-                  <button className="btn" style={{ width: "auto", padding: "12px 32px" }} onClick={() => setView("register")}>REGISTRAR PRIMEIRA APOSTA</button>
+                  <button className="btn" style={{ width: "auto", padding: "12px 32px" }} onClick={() => navigate("/register")}>REGISTRAR PRIMEIRA APOSTA</button>
                 </div>
               )}
             </>}
@@ -1602,14 +1612,14 @@ export default function BankrollVault() {
                 <button onClick={() => setShowUpgrade(true)} style={{ background: "linear-gradient(135deg,#f59e0b,#f97316)", color: "#000", border: "none", padding: "16px 40px", borderRadius: 10, fontSize: 15, fontWeight: 800, cursor: "pointer", marginBottom: 16 }}>
                   <Crown size={16} style={{ display: "inline", marginRight: 8, verticalAlign: "middle" }} />VER PLANO PRO
                 </button>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>ou <button onClick={() => setView("history")} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", padding: 0, fontSize: 12 }}>ver histórico de apostas</button></div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>ou <button onClick={() => navigate("/history")} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", padding: 0, fontSize: 12 }}>ver histórico de apostas</button></div>
               </div>
             )}
             {view === "register" && (!betLimitReached || editingBet) && <div className="card" style={{ maxWidth: 800, margin: "0 auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <span className="section-title" style={{ margin: 0 }}>{editingBet ? "EDITAR APOSTA" : `NOVA APOSTA ${!isPremium ? `(${bets.length}/${FREE_BET_LIMIT})` : ""}`}</span>
                 {editingBet && (
-                  <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setExtractError(""); setView("history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
+                  <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setExtractError(""); navigate("/history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
                 )}
               </div>
 
