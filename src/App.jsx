@@ -1131,6 +1131,35 @@ export default function BankrollVault() {
     return cells;
   }, [bets, calendarDate]);
 
+  const performanceAlerts = useMemo(() => {
+    const dismissed = config.dismissedAlerts || [];
+    const alerts = [];
+    if (currentStreak?.type === "loss" && currentStreak.count >= 5) {
+      const tier = Math.floor(currentStreak.count / 5) * 5;
+      const id = `streak_loss_${tier}`;
+      if (!dismissed.includes(id))
+        alerts.push({ id, icon: "🔴", title: `${currentStreak.count} derrotas consecutivas`, msg: "Considere pausar e revisar seus critérios de entrada. Sequências longas de perdas podem indicar viés de seleção ou má gestão de risco.", color: "danger" });
+    }
+    if (stats.currentBankroll > 0 && pendingExposure / stats.currentBankroll > 0.3) {
+      const id = "exposure_high";
+      if (!dismissed.includes(id)) {
+        const pct = ((pendingExposure / stats.currentBankroll) * 100).toFixed(0);
+        alerts.push({ id, icon: "⚠️", title: `Exposição alta: ${pct}% da banca em apostas abertas`, msg: `Você tem R$${fmt(pendingExposure)} em apostas pendentes. Apostar mais de 30% da banca simultaneamente aumenta o risco de ruína.`, color: "warning" });
+      }
+    }
+    if (stats.totalBets >= 20 && stats.roi < -10) {
+      const id = "roi_negative";
+      if (!dismissed.includes(id))
+        alerts.push({ id, icon: "📉", title: `ROI negativo: ${stats.roi.toFixed(1)}%`, msg: "Após 20+ apostas, um ROI abaixo de −10% indica que seus critérios de seleção precisam de revisão. Analise seus padrões na aba Análise.", color: "danger" });
+    }
+    return alerts;
+  }, [currentStreak, pendingExposure, stats.currentBankroll, stats.totalBets, stats.roi, config.dismissedAlerts]);
+
+  const dismissAlert = useCallback((id) => {
+    const dismissed = config.dismissedAlerts || [];
+    if (!dismissed.includes(id)) saveConfig({ ...config, dismissedAlerts: [...dismissed, id] });
+  }, [config, saveConfig]);
+
   const finishOnboarding = useCallback(() => {
     setOnboardStep(0);
     saveConfig({ ...config, onboardingCompleted: true });
@@ -1653,6 +1682,20 @@ export default function BankrollVault() {
 
             {/* DASHBOARD */}
             {view === "dashboard" && <>
+              {performanceAlerts.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+                  {performanceAlerts.map(alert => (
+                    <div key={alert.id} className="animate-fade-in" style={{ display: "flex", alignItems: "flex-start", gap: 12, background: alert.color === "danger" ? "rgba(255,61,90,0.07)" : "rgba(245,158,11,0.07)", border: `1px solid ${alert.color === "danger" ? "rgba(255,61,90,0.25)" : "rgba(245,158,11,0.3)"}`, borderRadius: 12, padding: "14px 18px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 18, lineHeight: 1 }}>{alert.icon}</span>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{alert.title}</div>
+                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.6 }}>{alert.msg}</div>
+                      </div>
+                      <button onClick={() => dismissAlert(alert.id)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 4, display: "flex", flexShrink: 0 }}><X size={16} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="grid-4">
                 {[{ label: "ROI", val: fmtPct(stats.roi), color: stats.roi >= 0 ? "g" : "r", tip: "Retorno Sobre Investimento. Mede o seu lucro líquido em relação à banca inicial." }, 
                   { label: "YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? "g" : "r", tip: "Eficiência. Mostra a porcentagem de lucro sobre todo o volume financeiro apostado." }, 
