@@ -1307,7 +1307,7 @@ export default function BankrollVault() {
           </button>
         ))}
         {!isPremium && (
-          <button onClick={() => setShowUpgrade(true)} style={{ margin: "0 12px 12px", padding: "10px 14px", background: "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(249,115,22,0.08))", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 10, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10, transition: "all 0.2s" }} onMouseOver={e => e.currentTarget.style.borderColor = "#f59e0b"} onMouseOut={e => e.currentTarget.style.borderColor = "rgba(245,158,11,0.35)"}>
+          <button className="sidebar-only" onClick={() => setShowUpgrade(true)} style={{ margin: "0 12px 12px", padding: "10px 14px", background: "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(249,115,22,0.08))", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 10, cursor: "pointer", textAlign: "left", alignItems: "center", gap: 10, transition: "all 0.2s" }} onMouseOver={e => e.currentTarget.style.borderColor = "#f59e0b"} onMouseOut={e => e.currentTarget.style.borderColor = "rgba(245,158,11,0.35)"}>
             <Crown size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", letterSpacing: 0.5 }}>UPGRADE PARA PRO</div>
@@ -1316,7 +1316,7 @@ export default function BankrollVault() {
           </button>
         )}
         {isPremium && (
-          <div style={{ margin: "0 12px 12px", padding: "8px 14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="sidebar-only" style={{ margin: "0 12px 12px", padding: "8px 14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, alignItems: "center", gap: 8 }}>
             <Crown size={14} color="#f59e0b" />
             <span style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b" }}>PLANO PRO ATIVO</span>
           </div>
