@@ -699,13 +699,21 @@ export default function BankrollVault() {
 
   const updateBetResult = useCallback(async (betId, result) => {
     if (!user) return;
-    try { await setDoc(doc(db, "users", user.uid, "bets", String(betId)), { result }, { merge: true }); }
+    try {
+      await setDoc(doc(db, "users", user.uid, "bets", String(betId)), { result }, { merge: true });
+      const label = result === "win" ? "✅ Green registrado!" : result === "loss" ? "❌ Red registrado" : result === "void" ? "Aposta anulada" : "Resultado atualizado";
+      setShareToast(label); setTimeout(() => setShareToast(""), 3000);
+    }
     catch (err) { setSyncError("Erro ao salvar resultado."); }
   }, [user]);
 
   const deleteBet = useCallback(async (betId) => {
     if (!user) return;
-    try { await deleteDoc(doc(db, "users", user.uid, "bets", String(betId))); setDeletingId(null); }
+    try {
+      await deleteDoc(doc(db, "users", user.uid, "bets", String(betId)));
+      setDeletingId(null);
+      setShareToast("Aposta excluída"); setTimeout(() => setShareToast(""), 3000);
+    }
     catch (err) { setSyncError("Erro ao excluir aposta."); }
   }, [user]);
 
@@ -986,6 +994,23 @@ export default function BankrollVault() {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {isRegistering && password.length > 0 && (() => {
+                const score = (password.length >= 8 ? 1 : 0) + (/[0-9]/.test(password) ? 1 : 0) + (/[^a-zA-Z0-9]/.test(password) ? 1 : 0);
+                const levels = [
+                  { label: "Fraca", color: "#ff3d5a", w: "33%" },
+                  { label: "Média", color: "#f59e0b", w: "66%" },
+                  { label: "Forte", color: "#00d48a", w: "100%" },
+                ];
+                const lvl = password.length < 6 ? levels[0] : score <= 1 ? levels[1] : score === 2 ? levels[1] : levels[2];
+                return (
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ height: 3, background: "var(--border)", borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: lvl.w, background: lvl.color, borderRadius: 4, transition: "width 0.3s ease, background 0.3s ease" }} />
+                    </div>
+                    <span style={{ fontSize: 10, color: lvl.color, fontWeight: 600, letterSpacing: 0.5 }}>{lvl.label}</span>
+                  </div>
+                );
+              })()}
             </div>
 
             {!isRegistering && (
@@ -1136,9 +1161,11 @@ export default function BankrollVault() {
       }
       localStorage.setItem("lastBookmaker", form.bookmaker);
       const dest = editingBet ? "/history" : "/dashboard";
+      const msg = editingBet ? "Aposta atualizada! ✅" : "Aposta registrada! ✅";
       setEditingBet(null);
       setForm(defaultForm());
       setFormError("");
+      setShareToast(msg); setTimeout(() => setShareToast(""), 3000);
       navigate(dest);
     } catch (err) { setSyncError("Erro ao salvar aposta: " + err.message); }
   };
