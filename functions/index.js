@@ -1,4 +1,4 @@
-const { onRequest } = require("firebase-functions/v2/https");
+const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 
@@ -16,15 +16,15 @@ const INACTIVE_EVENTS = [
   "SUBSCRIPTION_CANCELLATION",
 ];
 
+const BOOTSTRAP_PREMIUM = ["zehvistuba@gmail.com", "jvistuba@gmail.com", "bancalogica@gmail.com"];
+const BOOTSTRAP_ADMIN   = ["jvistuba@gmail.com", "bancalogica@gmail.com"];
+
+// ─── Webhook Hotmart ──────────────────────────────────────────────────────────
 exports.hotmartWebhook = onRequest(
-  {
-    secrets: [hotmartToken],
-    cors: false,
-  },
+  { secrets: [hotmartToken], cors: false },
   async (req, res) => {
     if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-    // Hotmart envia o token como query param ?hottok=TOKEN
     const receivedToken = req.query.hottok || req.headers["x-hotmart-webhook-token"];
     if (!receivedToken || receivedToken !== hotmartToken.value()) {
       console.error("❌ Token Hotmart inválido");
@@ -46,14 +46,11 @@ exports.hotmartWebhook = onRequest(
     console.log(`📨 Evento: ${event} | Comprador: ${email}`);
 
     try {
-      // Busca o usuário Firebase pelo email do comprador Hotmart
       let uid;
       try {
         const userRecord = await auth.getUserByEmail(email);
         uid = userRecord.uid;
       } catch {
-        // Usuário ainda não tem conta — salva numa coleção pendente
-        // para ativar quando ele se cadastrar
         await db.doc(`pendingSubscriptions/${email.replace("@", "_at_")}`).set({
           email,
           event,
@@ -100,3 +97,113 @@ exports.hotmartWebhook = onRequest(
     }
   }
 );
+
+// ─── Bootstrap (uma vez só) ───────────────────────────────────────────────────
+// POST /bootstrapAdmins?token=SEU_HOTTOK
+exports.bootstrapAdmins = onRequest(
+  { secrets: [hotmartToken], cors: false },
+  async (req, res) => {
+    if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+    const token = req.query.token || req.headers["x-admin-token"];
+    if (!token || token !== hotmartToken.value()) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const results = [];
+    for (const email of BOOTSTRAP_PREMIUM) {
+      const isAdminEmail = BOOTSTRAP_ADMIN.includes(email);
+      try {
+        const userRecord = await auth.getUserByEmail(email);
+        const uid = userRecord.uid;
+        await db.doc(`users/${uid}`).set(
+          {
+            subscription: {
+              status: "active",
+              hotmartEmail: email,
+              activatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              cancelledAt: null,
+            },
+            ...(isAdminEmail ? { isAdmin: true } : {}),
+          },
+          { merge: true }
+        );
+        results.push({ email, uid, status: "activated", isAdmin: isAdminEmail });
+        console.log(`✅ Bootstrap: ${email} (admin=${isAdminEmail})`);
+      } catch {
+        await db.doc(`pendingSubscriptions/${email.replace("@", "_at_")}`).set({
+          email,
+          isPremium: true,
+          isAdmin: isAdminEmail,
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        results.push({ email, status: "pending_registration", isAdmin: isAdminEmail });
+        console.log(`⚠️ Bootstrap pendente: ${email}`);
+      }
+    }
+
+    res.json({ success: true, results });
+  }
+);
+
+// ─── Admin: buscar usuário por email ─────────────────────────────────────────
+exports.adminGetUser = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated");
+
+  const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
+  if (!callerSnap.exists() || !callerSnap.data().isAdmin) {
+    throw new HttpsError("permission-denied", "Sem permissão de admin");
+  }
+
+  const { email } = request.data;
+  if (!email) throw new HttpsError("invalid-argument", "Email obrigatório");
+
+  let userRecord;
+  try {
+    userRecord = await auth.getUserByEmail(email);
+  } catch {
+    throw new HttpsError("not-found", `Usuário não encontrado: ${email}`);
+  }
+
+  const uid = userRecord.uid;
+  const userSnap = await db.doc(`users/${uid}`).get();
+  const userData = userSnap.exists() ? userSnap.data() : {};
+
+  return {
+    uid,
+    email: userRecord.email,
+    displayName: userRecord.displayName || "",
+    subscription: userData.subscription || { status: "free" },
+    isAdmin: userData.isAdmin === true,
+  };
+});
+
+// ─── Admin: alterar premium / admin ──────────────────────────────────────────
+exports.adminSetRole = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated");
+
+  const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
+  if (!callerSnap.exists() || !callerSnap.data().isAdmin) {
+    throw new HttpsError("permission-denied", "Sem permissão de admin");
+  }
+
+  const { uid, isPremium, isAdmin: makeAdmin } = request.data;
+  if (!uid) throw new HttpsError("invalid-argument", "UID obrigatório");
+
+  const update = {};
+  if (isPremium !== undefined) {
+    update["subscription.status"] = isPremium ? "active" : "free";
+    if (isPremium) {
+      update["subscription.activatedAt"] = admin.firestore.FieldValue.serverTimestamp();
+      update["subscription.cancelledAt"] = null;
+    } else {
+      update["subscription.cancelledAt"] = admin.firestore.FieldValue.serverTimestamp();
+    }
+  }
+  if (makeAdmin !== undefined) {
+    update.isAdmin = makeAdmin;
+  }
+
+  await db.doc(`users/${uid}`).set(update, { merge: true });
+  return { success: true };
+});
