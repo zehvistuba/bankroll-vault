@@ -254,6 +254,195 @@ function ScenarioSimulator({ bets, initialBankroll }) {
   );
 }
 
+const AVANTZ_URL = "https://inga-scout.zehvistuba.workers.dev";
+
+const SINAIS_COMPS = [
+  { key: "football_brasileirao_a",      label: "Brasileirão",  flag: "🇧🇷" },
+  { key: "football_premier_league",     label: "Premier",      flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+  { key: "football_la_liga",            label: "La Liga",      flag: "🇪🇸" },
+  { key: "football_champions_league",   label: "Champions",    flag: "⭐" },
+  { key: "basketball_nba",              label: "NBA",          flag: "🏀" },
+];
+
+const TIER_META = {
+  A: { label: "Tier A", bg: "rgba(0,212,138,0.15)", border: "rgba(0,212,138,0.4)", color: "var(--primary)" },
+  B: { label: "Tier B", bg: "rgba(139,127,245,0.12)", border: "rgba(139,127,245,0.35)", color: "#8b7ff5" },
+  C: { label: "Tier C", bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.3)", color: "#f59e0b" },
+  D: { label: "Tier D", bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.1)", color: "var(--muted)" },
+};
+
+const CONF_LABEL = { high: "Alta", medium: "Média", low: "Baixa" };
+
+function SignaisAvantz() {
+  const [comp, setComp] = useState("football_brasileirao_a");
+  const [dateFilter, setDateFilter] = useState("today");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    setData(null);
+    fetch(`${AVANTZ_URL}/api/home?competitionKey=${comp}&dateFilter=${dateFilter}`)
+      .then(r => { if (!r.ok) throw new Error(`Serviço indisponível (${r.status})`); return r.json(); })
+      .then(d => { setData(d); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [comp, dateFilter]);
+
+  const picks = useMemo(() =>
+    (data?.cards || []).filter(c => c?.analyticalContext?.recommendation?.action?.startsWith("value_"))
+      .sort((a, b) => {
+        const evA = a.analyticalContext.recommendation.ev ?? 0;
+        const evB = b.analyticalContext.recommendation.ev ?? 0;
+        return evB - evA;
+      }),
+  [data]);
+
+  const allCards = data?.cards || [];
+  const fmtTime = iso => { try { return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }); } catch { return "—"; } };
+
+  const tabStyle = active => ({
+    padding: "7px 14px", borderRadius: 8, border: "1px solid var(--border)",
+    background: active ? "var(--primary)" : "transparent",
+    color: active ? "#000" : "var(--muted)",
+    fontWeight: active ? 700 : 500, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+  });
+
+  return (
+    <div>
+      {/* Competition selector */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        {SINAIS_COMPS.map(c => (
+          <button key={c.key} onClick={() => setComp(c.key)} style={tabStyle(comp === c.key)}>
+            {c.flag} {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Date filter */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+        {[["today", "Hoje"], ["tomorrow", "Amanhã"]].map(([v, l]) => (
+          <button key={v} onClick={() => setDateFilter(v)} style={tabStyle(dateFilter === v)}>{l}</button>
+        ))}
+      </div>
+
+      {loading && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "32px 0", color: "var(--muted)", fontSize: 13 }}>
+          <RefreshCw size={18} style={{ animation: "spin 1s linear infinite", color: "var(--accent)" }} />
+          Buscando sinais...
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="card" style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,61,90,0.06)", border: "1px solid rgba(255,61,90,0.2)" }}>
+          <AlertTriangle size={18} style={{ color: "var(--danger)", flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Sinais indisponíveis</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{error} — verifique as configurações do Worker Avantz.</div>
+          </div>
+        </div>
+      )}
+
+      {data && !loading && (
+        <>
+          {/* Picks */}
+          {picks.length > 0 && (
+            <div style={{ marginBottom: 32 }}>
+              <span className="section-title" style={{ marginBottom: 16 }}>
+                PICKS DO DIA — {picks.length} sinal{picks.length > 1 ? "is" : ""}
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {picks.map((card, i) => {
+                  const rec = card.analyticalContext.recommendation;
+                  const tier = TIER_META[rec.tier] || TIER_META.D;
+                  const side = rec.side;
+                  const pickTeam = side === "home" ? card.homeTeam : card.awayTeam;
+                  const odds = card.analyticalContext?.oddsSignal?.prices?.[side];
+                  const kickoff = fmtTime(card.kickoffIso);
+                  return (
+                    <div key={i} className="card animate-fade-in" style={{ background: tier.bg, border: `1px solid ${tier.border}`, borderRadius: 12, padding: "18px 20px" }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>
+                            {card.match} · {kickoff}
+                          </div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>
+                            {side === "home" ? "🏠" : "✈️"} {pickTeam}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={{ background: tier.bg, border: `1px solid ${tier.border}`, color: tier.color, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>{tier.label}</span>
+                            <span style={{ color: "var(--muted)", fontSize: 12 }}>Confiança {CONF_LABEL[rec.confidence] || rec.confidence}</span>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          {odds != null && (
+                            <div style={{ fontSize: 22, fontWeight: 800, color: tier.color, fontFamily: "var(--font-mono)" }}>
+                              {Number(odds).toFixed(2)}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                            EV: <span style={{ color: "var(--primary)", fontWeight: 700 }}>+{(rec.ev * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {picks.length === 0 && (
+            <div className="card" style={{ textAlign: "center", padding: "32px 20px", marginBottom: 24 }}>
+              <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Nenhum pick identificado</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+                {allCards.length === 0
+                  ? "Sem jogos neste recorte. Tente outra data ou competição."
+                  : `${allCards.length} jogo(s) analisado(s) — nenhum com EV positivo suficiente.`}
+              </div>
+            </div>
+          )}
+
+          {/* Agenda completa */}
+          {allCards.length > 0 && (
+            <div>
+              <span className="section-title" style={{ marginBottom: 14 }}>AGENDA — {allCards.length} JOGO(S)</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {allCards.map((card, i) => {
+                  const rec = card.analyticalContext?.recommendation;
+                  const hasPick = rec?.action?.startsWith("value_");
+                  const tier = hasPick ? (TIER_META[rec.tier] || TIER_META.D) : null;
+                  const homeOdds = card.analyticalContext?.oddsSignal?.prices?.home;
+                  const awayOdds = card.analyticalContext?.oddsSignal?.prices?.away;
+                  const drawOdds = card.analyticalContext?.oddsSignal?.prices?.draw;
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--card)", border: `1px solid ${hasPick ? tier.border : "var(--border)"}`, borderRadius: 10, padding: "12px 16px", flexWrap: "wrap" }}>
+                      <div style={{ fontSize: 11, color: "var(--muted)", width: 36, flexShrink: 0, fontFamily: "var(--font-mono)" }}>{fmtTime(card.kickoffIso)}</div>
+                      <div style={{ flex: 1, minWidth: 160 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{card.match}</div>
+                      </div>
+                      {(homeOdds || drawOdds || awayOdds) && (
+                        <div style={{ display: "flex", gap: 6, fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--muted)", flexShrink: 0 }}>
+                          {homeOdds != null && <span style={{ padding: "2px 7px", background: "rgba(255,255,255,0.04)", borderRadius: 4 }}>{Number(homeOdds).toFixed(2)}</span>}
+                          {drawOdds != null && <span style={{ padding: "2px 7px", background: "rgba(255,255,255,0.04)", borderRadius: 4 }}>{Number(drawOdds).toFixed(2)}</span>}
+                          {awayOdds != null && <span style={{ padding: "2px 7px", background: "rgba(255,255,255,0.04)", borderRadius: 4 }}>{Number(awayOdds).toFixed(2)}</span>}
+                        </div>
+                      )}
+                      {hasPick && <span style={{ fontSize: 10, fontWeight: 700, color: tier.color, background: tier.bg, border: `1px solid ${tier.border}`, borderRadius: 6, padding: "2px 8px", flexShrink: 0 }}>PICK {rec.tier}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 const SPORTS = ["Futebol", "Tênis", "Basquete", "Futebol Americano", "MMA", "Outros"];
 const MARKETS = ["1x2", "Over/Under", "Escanteios", "Ambas Marcam", "Handicap Asiático", "Handicap Europeu", "Dupla Chance", "Total de Pontos", "Aces", "Duplas Faltas", "Outros"];
 const BOOKMAKERS = ["Bet365", "Betano", "Sportingbet", "Novibet", "Betnacional", "Pinnacle", "Betfair", "KTO", "Outros"];
@@ -2388,6 +2577,7 @@ export default function BankrollVault() {
                   {tabBtn("calendar", "Calendário")}
                   {tabBtn("community", "Comunidade")}
                   {hasSettled && tabBtn("cenarios", isPremium ? "Cenários" : "Cenários 🔒")}
+                  {tabBtn("sinais", "⚡ Sinais")}
                 </div>
                 {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
                 {(analyzeTab === "market" || analyzeTab === "bookmaker" || analyzeTab === "sport") && !hasSettled && (
@@ -2546,6 +2736,7 @@ export default function BankrollVault() {
                           </button>
                         </div>
                   )}
+                  {analyzeTab === "sinais" && <SignaisAvantz />}
                 </>
             </div>}
 
