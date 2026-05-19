@@ -862,19 +862,25 @@ export default function BankrollVault() {
 
   useEffect(() => {
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
-    if (isStandalone) return;
+    if (isStandalone || localStorage.getItem("pwaInstallDismissed")) return;
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isMobile) return;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    if (isIOS && !localStorage.getItem("pwaInstallDismissed")) {
-      setTimeout(() => setShowInstallBanner("ios"), 3000);
-      return;
-    }
+
+    // Captura o evento nativo do Chrome/Android se disponível
     const handler = (e) => {
       e.preventDefault();
       setInstallPrompt(e);
-      if (!localStorage.getItem("pwaInstallDismissed")) setShowInstallBanner("android");
     };
     window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
+
+    // Mostra o banner após 2s independente do evento — funciona em iOS e Android
+    const timer = setTimeout(() => setShowInstallBanner(isIOS ? "ios" : "android"), 2000);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -2753,11 +2759,13 @@ export default function BankrollVault() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Instalar Banca Lógica</div>
             {showInstallBanner === "ios"
-              ? <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Toque em <strong style={{ color: "#fff" }}>⎋ Compartilhar</strong> → "Adicionar à Tela Inicial"</div>
-              : <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Acesso rápido • funciona offline • sem loja de apps</div>
+              ? <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Toque em <strong style={{ color: "#fff" }}>□↑ Compartilhar</strong> → "Adicionar à Tela Inicial"</div>
+              : installPrompt
+                ? <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Acesso rápido • funciona offline • sem loja de apps</div>
+                : <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Menu <strong style={{ color: "#fff" }}>⋮</strong> → "Adicionar à tela inicial"</div>
             }
           </div>
-          {showInstallBanner === "android" && (
+          {showInstallBanner === "android" && installPrompt && (
             <button onClick={handleInstall} style={{ background: "#3B82F6", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
               Instalar
             </button>
