@@ -1436,12 +1436,8 @@ export default function BankrollVault() {
       <div style={{ display: "flex", width: "100%", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: 20 }}>
         <div className="card animate-fade-in" style={{ maxWidth: 400, width: "100%", padding: "40px 30px" }}>
           <div style={{ marginBottom: 30, textAlign: "center" }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-              <LogoMark size={52} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <span className="logo-label" style={{ fontSize: 11 }}>Banca</span>
-              <h1 className="logo-text" style={{ fontSize: 32 }}>LÓGICA</h1>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+              <img src="/logo-banca-logica.png" alt="Banca Lógica" style={{ height: 90 }} />
             </div>
             <p style={{ color: "var(--muted)", marginTop: 10, fontSize: 14, lineHeight: 1.6 }}>Acesse para salvar sua banca na nuvem.</p>
           </div>
@@ -1777,12 +1773,8 @@ export default function BankrollVault() {
       {/* SIDEBAR FOR DESKTOP, BOTTOM NAV FOR MOBILE */}
       <nav className="app-nav">
         <div className="sidebar-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
-            <LogoMark size={36} />
-            <div>
-              <span className="logo-label">Banca</span>
-              <h1 className="logo-text">LÓGICA</h1>
-            </div>
+          <div style={{ display: "flex", alignItems: "center", marginTop: 12, paddingLeft: 4 }}>
+            <img src="/logo-banca-logica.png" alt="Banca Lógica" style={{ height: 38 }} />
           </div>
         </div>
         {NAV.map(({ id, icon: Icon, label }) => (
@@ -1831,11 +1823,7 @@ export default function BankrollVault() {
         {/* HEADER */}
         <header className="app-header">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <LogoMark size={28} />
-            <div>
-              <span className="logo-label">Banca</span>
-              <h1 className="logo-text" style={{ fontSize: 20 }}>LÓGICA</h1>
-            </div>
+            <img src="/logo-banca-logica.png" alt="Banca Lógica" style={{ height: 28 }} />
             <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
               Olá, {userDisplayName.split(" ")[0] || ""}!
             </span>
@@ -2766,7 +2754,7 @@ export default function BankrollVault() {
       {/* PWA INSTALL BANNER */}
       {showInstallBanner && (
         <div className="animate-fade-in" style={{ position: "fixed", bottom: 76, left: 12, right: 12, zIndex: 1500, borderRadius: 16, background: "linear-gradient(135deg, #1e3a8a, #1e40af)", border: "1px solid rgba(59,130,246,0.4)", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-          <LogoMark size={40} />
+          <img src="/icon-192x192.png" alt="" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Instalar Banca Lógica</div>
             {showInstallBanner === "ios"
