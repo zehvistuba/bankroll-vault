@@ -848,6 +848,8 @@ export default function BankrollVault() {
   const [geminiKey, setGeminiKey] = useState("");
   const [form, setForm] = useState(defaultForm());
   const [kellyForm, setKellyForm] = useState({ prob: "", odds: "", bankroll: "" });
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -856,6 +858,23 @@ export default function BankrollVault() {
       setAuthLoading(false);
     });
     return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    if (isStandalone) return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIOS && !localStorage.getItem("pwaInstallDismissed")) {
+      setTimeout(() => setShowInstallBanner("ios"), 3000);
+      return;
+    }
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      if (!localStorage.getItem("pwaInstallDismissed")) setShowInstallBanner("android");
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   useEffect(() => {
@@ -1175,6 +1194,18 @@ export default function BankrollVault() {
     }
     return alerts;
   }, [currentStreak, pendingExposure, stats.currentBankroll, stats.totalBets, stats.roi, config.dismissedAlerts]);
+
+  const handleInstall = useCallback(async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === "accepted") { setShowInstallBanner(false); setInstallPrompt(null); }
+  }, [installPrompt]);
+
+  const dismissInstall = useCallback(() => {
+    setShowInstallBanner(false);
+    localStorage.setItem("pwaInstallDismissed", "1");
+  }, []);
 
   const dismissAlert = useCallback((id) => {
     const dismissed = config.dismissedAlerts || [];
@@ -2714,6 +2745,28 @@ export default function BankrollVault() {
         />
       )}
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} user={user} />}
+
+      {/* PWA INSTALL BANNER */}
+      {showInstallBanner && (
+        <div className="animate-fade-in" style={{ position: "fixed", bottom: 76, left: 12, right: 12, zIndex: 1500, borderRadius: 16, background: "linear-gradient(135deg, #1e3a8a, #1e40af)", border: "1px solid rgba(59,130,246,0.4)", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <LogoMark size={40} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Instalar Banca Lógica</div>
+            {showInstallBanner === "ios"
+              ? <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Toque em <strong style={{ color: "#fff" }}>⎋ Compartilhar</strong> → "Adicionar à Tela Inicial"</div>
+              : <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Acesso rápido • funciona offline • sem loja de apps</div>
+            }
+          </div>
+          {showInstallBanner === "android" && (
+            <button onClick={handleInstall} style={{ background: "#3B82F6", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+              Instalar
+            </button>
+          )}
+          <button onClick={dismissInstall} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", cursor: "pointer", padding: 4, display: "flex", flexShrink: 0 }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {shareToast && (
         <div className="animate-fade-in" style={{ position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.85)", color: "#fff", padding: "10px 20px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 2000, whiteSpace: "nowrap", border: "1px solid rgba(255,255,255,0.1)" }}>

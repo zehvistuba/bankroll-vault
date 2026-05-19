@@ -9,11 +9,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192x192.png', 'icon-512x512.png'],
       manifest: {
-        name: 'Bankroll Vault',
-        short_name: 'BancaLógica',
-        description: 'Aplicativo Profissional de Gestão de Bankroll e Análises Esportivas',
-        theme_color: '#0A0A10',
-        background_color: '#0A0A10',
+        name: 'Banca Lógica',
+        short_name: 'Banca Lógica',
+        description: 'Gestão profissional de banca, análise de performance e edge em apostas esportivas.',
+        theme_color: '#0B132B',
+        background_color: '#0B132B',
         display: 'standalone',
         orientation: 'portrait',
         icons: [
