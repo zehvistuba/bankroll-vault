@@ -866,6 +866,7 @@ export default function BankrollVault() {
   const [dashPeriod, setDashPeriod] = useState("all");
   const [calcTab, setCalcTab] = useState("kelly");
   const [dutchForm, setDutchForm] = useState([{odds:""},{odds:""},{odds:""}]);
+  const [dutchStake, setDutchStake] = useState("");
   const [arbForm, setArbForm] = useState({ odds1: "", odds2: "", stake: "" });
 
   useEffect(() => {
@@ -1017,7 +1018,8 @@ export default function BankrollVault() {
     sorted.forEach(bet => {
       const pl = getBetPL(bet); const clv = getCLV(bet);
       if (bet.result !== "pending") {
-        totalStake += bet.stake; totalPL += pl; bankroll += pl;
+        if (bet.result !== "void") totalStake += bet.stake;
+        totalPL += pl; bankroll += pl;
         if (bet.result === "win") wins++;
         if (bet.result === "loss") losses++;
         chartData.push({ d: bet.date.slice(5), v: Math.round(bankroll * 100) / 100 });
@@ -1176,9 +1178,15 @@ export default function BankrollVault() {
     if (valid.length < 2) return null;
     const total = valid.reduce((s, o) => s + 1/o, 0);
     if (total >= 1) return null;
-    const margin = ((total - 1) / total * 100);
-    return { stakes: valid.map(o => (1/o / total * 100).toFixed(2)), margin: (margin * -1).toFixed(2), profitable: true };
-  }, [dutchForm]);
+    const margin = (1 - total) / total * 100;
+    const s = parseFloat(dutchStake) || null;
+    return {
+      pcts: valid.map(o => (1/o / total * 100).toFixed(2)),
+      amounts: s ? valid.map(o => (s * (1/o / total)).toFixed(2)) : null,
+      margin: margin.toFixed(2),
+      profit: s ? (s / total - s).toFixed(2) : null,
+    };
+  }, [dutchForm, dutchStake]);
 
   const arbResult = useMemo(() => {
     const o1 = parseFloat(arbForm.odds1), o2 = parseFloat(arbForm.odds2);
@@ -1505,7 +1513,7 @@ export default function BankrollVault() {
             )}
             <div className="form-group">
               <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Mail size={12}/> E-MAIL</span>
-              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="input" placeholder="seu@email.com" />
+              <input type="text" value={email} onChange={e => setEmail(e.target.value)} className="input" placeholder="seu@email.com" inputMode="email" autoComplete="email" />
             </div>
             <div className="form-group">
               <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Lock size={12}/> SENHA</span>
@@ -1978,7 +1986,7 @@ export default function BankrollVault() {
                 {[{ label: "APOSTAS", val: stats.totalBets, color: "text" }, 
                   { label: "VITÓRIAS", val: stats.wins, color: "g" }, 
                   { label: "DERROTAS", val: stats.losses, color: "r" }, 
-                  { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : ""}${fmt(Math.abs(stats.totalPL))}`, color: stats.totalPL >= 0 ? "g" : "r", tip: "Profit & Loss. O seu resultado financeiro bruto em Reais." }].map(k => (
+                  { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : "-"}${fmt(Math.abs(stats.totalPL))}`, color: stats.totalPL >= 0 ? "g" : "r", tip: "Profit & Loss. O seu resultado financeiro bruto em Reais." }].map(k => (
                   <div key={k.label} className="card" style={{ padding: "16px" }}>
                     <span className="kpi-label" style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: '4px' }}>{k.label} {k.tip && <InfoTooltip text={k.tip} />}</span>
                     <div className={`kpi-value ${k.color}`} style={{ fontSize: 20 }}>{k.val}</div>
@@ -2771,17 +2779,25 @@ export default function BankrollVault() {
                   </div>
                 ))}
                 {dutchForm.length < 8 && <button type="button" onClick={() => setDutchForm(f => [...f, {odds:""}])} style={{ marginBottom: 20, background: "none", border: "1px dashed var(--border)", borderRadius: 8, color: "var(--muted)", cursor: "pointer", padding: "10px 16px", width: "100%", fontSize: 13 }}>+ Adicionar Outcome</button>}
+                <div className="form-group" style={{ marginBottom: 24 }}>
+                  <span className="form-label">STAKE TOTAL (R$) — opcional</span>
+                  <input type="number" placeholder="ex: 100.00" value={dutchStake} onChange={e => setDutchStake(e.target.value)} className="input" />
+                </div>
                 {dutchResult && (
                   <div className="card animate-fade-in" style={{ background: "rgba(59,130,246,0.06)", borderColor: "rgba(59,130,246,0.3)", padding: 20 }}>
                     <span className="kpi-label" style={{ color: "var(--primary)", marginBottom: 12, display: "block" }}>DISTRIBUIÇÃO DE STAKES</span>
-                    {dutchResult.stakes.map((s, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: i < dutchResult.stakes.length-1 ? "1px solid var(--border)" : "none" }}>
+                    {dutchResult.pcts.map((pct, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: i < dutchResult.pcts.length-1 ? "1px solid var(--border)" : "none" }}>
                         <span style={{ color: "var(--muted)", fontSize: 14 }}>Outcome {i+1}</span>
-                        <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--text)" }}>{s}% do stake</span>
+                        <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--text)" }}>
+                          {dutchResult.amounts ? `R$ ${dutchResult.amounts[i]}` : `${pct}%`}
+                        </span>
                       </div>
                     ))}
                     <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(16,185,129,0.1)", borderRadius: 8, fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>
-                      Margem garantida: +{dutchResult.margin}% de lucro sobre o total apostado
+                      {dutchResult.profit
+                        ? `Lucro garantido: R$ ${dutchResult.profit} (+${dutchResult.margin}%)`
+                        : `Margem garantida: +${dutchResult.margin}% sobre o total apostado`}
                     </div>
                   </div>
                 )}
