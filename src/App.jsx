@@ -7,6 +7,27 @@ import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPasswor
 import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 const FREE_BET_LIMIT = 30;
+
+function LogoMark({ size = 32 }) {
+  const id = `blg-${size}`;
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#1e40af" />
+          <stop offset="100%" stopColor="#1d4ed8" />
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="8" fill={`url(#${id})`} />
+      <rect x="5" y="21" width="5" height="6" rx="1.5" fill="white" fillOpacity="0.45" />
+      <rect x="13.5" y="15" width="5" height="12" rx="1.5" fill="white" fillOpacity="0.7" />
+      <rect x="22" y="9" width="5" height="18" rx="1.5" fill="white" fillOpacity="0.95" />
+      <path d="M7.5 21.5 C11 17 16 13 24.5 9" stroke="white" strokeWidth="1.2" strokeOpacity="0.35" fill="none" strokeLinecap="round" />
+      <circle cx="24.5" cy="9" r="2.8" fill="#10B981" />
+      <circle cx="24.5" cy="9" r="1.4" fill="white" />
+    </svg>
+  );
+}
 const HOTMART_CHECKOUT_URL = "https://pay.hotmart.com/P105879919P";
 
 const ProBadge = () => (
@@ -149,7 +170,7 @@ function ScenarioSimulator({ bets, initialBankroll }) {
     return {
       chartData, winRate: p,
       summary: {
-        real:  { label: "Real (suas apostas)", color: "#00d48a", final: rBR, roi: (rBR - initial) / initial * 100, dd: calcDD("real"),  key: "real" },
+        real:  { label: "Real (suas apostas)", color: "#10B981", final: rBR, roi: (rBR - initial) / initial * 100, dd: calcDD("real"),  key: "real" },
         kelly: { label: "Kelly Completo",       color: "#8b7ff5", final: kBR, roi: (kBR - initial) / initial * 100, dd: calcDD("kelly"), key: "kelly" },
         half:  { label: "Meio-Kelly",           color: "#f59e0b", final: hBR, roi: (hBR - initial) / initial * 100, dd: calcDD("half"),  key: "half" },
         fixed: { label: "1% Fixo",              color: "#808098", final: fBR, roi: (fBR - initial) / initial * 100, dd: calcDD("fixed"), key: "fixed" },
@@ -290,7 +311,7 @@ const generateBetCard = async (bet) => {
   const ctx = canvas.getContext("2d");
   ctx.scale(2, 2);
   const pl = getBetPL(bet);
-  const rc = bet.result === "win" ? "#00d48a" : bet.result === "loss" ? "#ff3d5a" : "#8b7ff5";
+  const rc = bet.result === "win" ? "#10B981" : bet.result === "loss" ? "#EF4444" : "#3B82F6";
   const rl = bet.result === "win" ? "GREEN ✓" : bet.result === "loss" ? "RED ✗" : "PENDENTE";
 
   ctx.fillStyle = "#07070e"; ctx.fillRect(0, 0, W, H);
@@ -1346,10 +1367,10 @@ export default function BankrollVault() {
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 28, textAlign: "center" }}>
           {tipsterProfile.settledBets} apostas liquidadas · {tipsterProfile.wins}W / {tipsterProfile.losses}L
         </div>
-        <div style={{ padding: "16px", background: "rgba(0,212,138,0.06)", border: "1px solid rgba(0,212,138,0.2)", borderRadius: 10, textAlign: "center" }}>
+        <div style={{ padding: "16px", background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 10, textAlign: "center" }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>Gerencie sua banca como um profissional</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Rastreie seus resultados, analise seu edge e descubra seus padrões com IA.</div>
-          <button onClick={() => { window.history.replaceState({}, "", window.location.pathname); window.location.reload(); }} style={{ background: "var(--primary)", color: "#000", border: "none", borderRadius: 8, padding: "12px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>CRIAR CONTA GRÁTIS</button>
+          <button onClick={() => { window.history.replaceState({}, "", window.location.pathname); window.location.reload(); }} style={{ background: "var(--primary)", color: "#fff", border: "none", borderRadius: 8, padding: "12px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>CRIAR CONTA GRÁTIS</button>
         </div>
       </div>
     </div>
@@ -1367,9 +1388,14 @@ export default function BankrollVault() {
       <div style={{ display: "flex", width: "100%", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: 20 }}>
         <div className="card animate-fade-in" style={{ maxWidth: 400, width: "100%", padding: "40px 30px" }}>
           <div style={{ marginBottom: 30, textAlign: "center" }}>
-            <span className="logo-label" style={{ fontSize: 14 }}>Banca</span>
-            <h1 className="logo-text" style={{ fontSize: 36, justifyContent: "center" }}>LÓGICA</h1>
-            <p style={{ color: "var(--muted)", marginTop: 12, fontSize: 14, lineHeight: 1.6 }}>Acesse para salvar sua banca na nuvem.</p>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+              <LogoMark size={52} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <span className="logo-label" style={{ fontSize: 11 }}>Banca</span>
+              <h1 className="logo-text" style={{ fontSize: 32 }}>LÓGICA</h1>
+            </div>
+            <p style={{ color: "var(--muted)", marginTop: 10, fontSize: 14, lineHeight: 1.6 }}>Acesse para salvar sua banca na nuvem.</p>
           </div>
 
           <form onSubmit={handleEmailAuth} style={{ marginBottom: 20 }}>
@@ -1421,7 +1447,7 @@ export default function BankrollVault() {
 
             {authError && <div style={{ color: "var(--danger)", fontSize: 13, marginBottom: 16, background: "rgba(255,61,90,0.1)", padding: 10, borderRadius: 6, lineHeight: 1.5, border: "1px solid rgba(255,61,90,0.3)" }}>{authError}</div>}
 
-            <button type="submit" disabled={authInProgress} style={{ width: "100%", background: "var(--primary)", color: "#000", border: "none", padding: "14px", borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: authInProgress ? "not-allowed" : "pointer", opacity: authInProgress ? 0.7 : 1, transition: "opacity 0.2s" }}>
+            <button type="submit" disabled={authInProgress} style={{ width: "100%", background: "var(--primary)", color: "#fff", border: "none", padding: "14px", borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: authInProgress ? "not-allowed" : "pointer", opacity: authInProgress ? 0.7 : 1, transition: "opacity 0.2s" }}>
               {authInProgress ? "CARREGANDO..." : (isRegistering ? "CRIAR CONTA" : "ENTRAR")}
             </button>
 
@@ -1704,6 +1730,7 @@ export default function BankrollVault() {
       <nav className="app-nav">
         <div className="sidebar-header">
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+            <LogoMark size={36} />
             <div>
               <span className="logo-label">Banca</span>
               <h1 className="logo-text">LÓGICA</h1>
@@ -1755,7 +1782,8 @@ export default function BankrollVault() {
         
         {/* HEADER */}
         <header className="app-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <LogoMark size={28} />
             <div>
               <span className="logo-label">Banca</span>
               <h1 className="logo-text" style={{ fontSize: 20 }}>LÓGICA</h1>
