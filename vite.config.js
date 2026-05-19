@@ -16,6 +16,7 @@ export default defineConfig({
         background_color: '#0B132B',
         display: 'standalone',
         orientation: 'portrait',
+        lang: 'pt-BR',
         icons: [
           {
             src: 'icon-192x192.png',

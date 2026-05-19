@@ -861,6 +861,12 @@ export default function BankrollVault() {
   const [kellyForm, setKellyForm] = useState({ prob: "", odds: "", bankroll: "" });
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [dashPeriod, setDashPeriod] = useState("all");
+  const [calcTab, setCalcTab] = useState("kelly");
+  const [dutchForm, setDutchForm] = useState([{odds:""},{odds:""},{odds:""}]);
+  const [arbForm, setArbForm] = useState({ odds1: "", odds2: "", stake: "" });
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -869,6 +875,18 @@ export default function BankrollVault() {
       setAuthLoading(false);
     });
     return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!authLoading && !user) navigate("/", { replace: true });
+  }, [user, authLoading]);
+
+  useEffect(() => {
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
   useEffect(() => {
@@ -987,7 +1005,13 @@ export default function BankrollVault() {
   }, [user]);
 
   const stats = useMemo(() => {
-    const sorted = [...bets].sort((a, b) => a.date.localeCompare(b.date));
+    const now = new Date();
+    const cutoff = dashPeriod === "7d" ? new Date(now - 7*86400000).toISOString().slice(0,10)
+      : dashPeriod === "30d" ? new Date(now - 30*86400000).toISOString().slice(0,10)
+      : dashPeriod === "90d" ? new Date(now - 90*86400000).toISOString().slice(0,10)
+      : null;
+    const filteredBets = cutoff ? bets.filter(b => !b.date || b.date >= cutoff) : bets;
+    const sorted = [...filteredBets].sort((a, b) => a.date.localeCompare(b.date));
     let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
     const chartData = [{ d: "Início", v: config.initialBankroll }];
     sorted.forEach(bet => {
@@ -1000,8 +1024,8 @@ export default function BankrollVault() {
       }
       if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
     });
-    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: bets.length, chartData };
-  }, [bets, config.initialBankroll]);
+    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: filteredBets.length, chartData };
+  }, [bets, config.initialBankroll, dashPeriod]);
 
   const syncPublicProfile = useCallback(async (enabled) => {
     if (!user) return;
@@ -1079,6 +1103,15 @@ export default function BankrollVault() {
       setAuthError("A senha deve ter pelo menos 6 caracteres.");
       return;
     }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setAuthError("E-mail inválido — use o formato nome@dominio.com");
+      return;
+    }
+    if (isRegistering && password !== confirmPassword) {
+      setAuthError("As senhas não conferem.");
+      return;
+    }
     setAuthInProgress(true);
     try {
       if (isRegistering) {
@@ -1138,6 +1171,27 @@ export default function BankrollVault() {
     return { fraction: f * 100, amount: f * br, hasValue: f > 0 };
   }, [kellyForm, stats.currentBankroll]);
 
+  const dutchResult = useMemo(() => {
+    const valid = dutchForm.map(r => parseFloat(r.odds)).filter(o => o > 1);
+    if (valid.length < 2) return null;
+    const total = valid.reduce((s, o) => s + 1/o, 0);
+    if (total >= 1) return null;
+    const margin = ((total - 1) / total * 100);
+    return { stakes: valid.map(o => (1/o / total * 100).toFixed(2)), margin: (margin * -1).toFixed(2), profitable: true };
+  }, [dutchForm]);
+
+  const arbResult = useMemo(() => {
+    const o1 = parseFloat(arbForm.odds1), o2 = parseFloat(arbForm.odds2);
+    const s = parseFloat(arbForm.stake) || 100;
+    if (!o1 || !o2 || o1 <= 1 || o2 <= 1) return null;
+    const total = 1/o1 + 1/o2;
+    if (total >= 1) return { isArb: false, margin: ((total-1)*100).toFixed(2) };
+    const profit = s / total - s;
+    const s1 = s / (o1 * total);
+    const s2 = s / (o2 * total);
+    return { isArb: true, margin: ((1-total)*100).toFixed(2), s1: s1.toFixed(2), s2: s2.toFixed(2), profit: profit.toFixed(2), total: s.toFixed(2) };
+  }, [arbForm]);
+
   const monthlyData = useMemo(() => {
     const months = {};
     bets.filter(b => b.result !== "pending" && b.date).forEach(bet => {
@@ -1191,8 +1245,8 @@ export default function BankrollVault() {
   const performanceAlerts = useMemo(() => {
     const dismissed = config.dismissedAlerts || [];
     const alerts = [];
-    if (currentStreak?.type === "loss" && currentStreak.count >= 5) {
-      const tier = Math.floor(currentStreak.count / 5) * 5;
+    if (currentStreak?.type === "loss" && currentStreak.count >= 3) {
+      const tier = Math.floor(currentStreak.count / 3) * 3;
       const id = `streak_loss_${tier}`;
       if (!dismissed.includes(id))
         alerts.push({ id, icon: "🔴", title: `${currentStreak.count} derrotas consecutivas`, msg: "Considere pausar e revisar seus critérios de entrada. Sequências longas de perdas podem indicar viés de seleção ou má gestão de risco.", color: "danger" });
@@ -1204,13 +1258,13 @@ export default function BankrollVault() {
         alerts.push({ id, icon: "⚠️", title: `Exposição alta: ${pct}% da banca em apostas abertas`, msg: `Você tem R$${fmt(pendingExposure)} em apostas pendentes. Apostar mais de 30% da banca simultaneamente aumenta o risco de ruína.`, color: "warning" });
       }
     }
-    if (stats.totalBets >= 20 && stats.roi < -10) {
+    if (stats.totalBets >= 20 && stats.yield < -5) {
       const id = "roi_negative";
       if (!dismissed.includes(id))
-        alerts.push({ id, icon: "📉", title: `ROI negativo: ${stats.roi.toFixed(1)}%`, msg: "Após 20+ apostas, um ROI abaixo de −10% indica que seus critérios de seleção precisam de revisão. Analise seus padrões na aba Análise.", color: "danger" });
+        alerts.push({ id, icon: "📉", title: `Ret. Banca negativo: ${stats.yield.toFixed(1)}%`, msg: "Após 20+ apostas, um ROI/Yield abaixo de −5% indica que seus critérios de seleção precisam de revisão. Analise seus padrões na aba Análise.", color: "danger" });
     }
     return alerts;
-  }, [currentStreak, pendingExposure, stats.currentBankroll, stats.totalBets, stats.roi, config.dismissedAlerts]);
+  }, [currentStreak, pendingExposure, stats.currentBankroll, stats.totalBets, stats.roi, stats.yield, config.dismissedAlerts]);
 
   const handleInstall = useCallback(async () => {
     if (!installPrompt) return;
@@ -1256,8 +1310,8 @@ export default function BankrollVault() {
     y += 9;
 
     const kpis = [
-      { label: "ROI", val: `${stats.roi >= 0 ? "+" : ""}${stats.roi.toFixed(2)}%`, pos: stats.roi >= 0 },
-      { label: "YIELD", val: `${stats.yield >= 0 ? "+" : ""}${stats.yield.toFixed(2)}%`, pos: stats.yield >= 0 },
+      { label: "RET. BANCA", val: `${stats.roi >= 0 ? "+" : ""}${stats.roi.toFixed(2)}%`, pos: stats.roi >= 0 },
+      { label: "ROI/YIELD", val: `${stats.yield >= 0 ? "+" : ""}${stats.yield.toFixed(2)}%`, pos: stats.yield >= 0 },
       { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, pos: true },
       { label: "APOSTAS / V / D", val: `${stats.totalBets} / ${stats.wins} / ${stats.losses}`, pos: true },
       { label: "P&L TOTAL", val: `${stats.totalPL >= 0 ? "+" : ""}R$${Math.round(stats.totalPL)}`, pos: stats.totalPL >= 0 },
@@ -1380,7 +1434,7 @@ export default function BankrollVault() {
     }
   }, [onboardStep, onboardBanca, config, saveConfig, finishOnboarding]);
 
-  const VALID_ROUTES = ["dashboard", "register", "history", "analyze", "kelly", "admin"];
+  const VALID_ROUTES = ["dashboard", "register", "history", "analyze", "kelly", "settings", "admin"];
   useEffect(() => {
     if (!loaded) return;
     if (view === "admin" && !isAdmin) { navigate("/dashboard", { replace: true }); return; }
@@ -1480,6 +1534,13 @@ export default function BankrollVault() {
               })()}
             </div>
 
+            {isRegistering && (
+              <div className="form-group">
+                <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Lock size={12}/> CONFIRMAR SENHA</span>
+                <input type={showPassword ? "text" : "password"} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="input" placeholder="••••••••" />
+              </div>
+            )}
+
             {!isRegistering && (
               <div style={{ textAlign: "right", marginTop: -8, marginBottom: 12 }}>
                 {forgotPasswordSent
@@ -1497,7 +1558,7 @@ export default function BankrollVault() {
 
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
               <span style={{ color: "var(--muted)" }}>{isRegistering ? "Já tem conta?" : "Não tem conta?"} </span>
-              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); setNome(""); setPassword(""); setForgotPasswordSent(false); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+              <button type="button" onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); setNome(""); setPassword(""); setConfirmPassword(""); setForgotPasswordSent(false); }} style={{ background: "none", border: "none", color: "var(--accent)", fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
                 {isRegistering ? "Faça login" : "Cadastre-se"}
               </button>
             </div>
@@ -1731,6 +1792,7 @@ export default function BankrollVault() {
     { id: "history", icon: List, label: "Histórico" },
     { id: "analyze", icon: BarChart2, label: "Análise" },
     { id: "kelly", icon: Calculator, label: "Kelly" },
+    { id: "settings", icon: User, label: "Perfil" },
     ...(isAdmin ? [{ id: "admin", icon: Shield, label: "Admin" }] : []),
   ];
 
@@ -1894,9 +1956,16 @@ export default function BankrollVault() {
                   ))}
                 </div>
               )}
+              <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+                {[["7d","7 dias"],["30d","30 dias"],["90d","90 dias"],["all","Tudo"]].map(([p, label]) => (
+                  <button key={p} onClick={() => setDashPeriod(p)} style={{ padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, border: "1px solid", borderColor: dashPeriod === p ? "var(--primary)" : "var(--border)", background: dashPeriod === p ? "rgba(59,130,246,0.15)" : "transparent", color: dashPeriod === p ? "var(--primary)" : "var(--muted)", cursor: "pointer", transition: "all 0.15s" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
               <div className="grid-4">
-                {[{ label: "ROI", val: fmtPct(stats.roi), color: stats.roi >= 0 ? "g" : "r", tip: "Retorno Sobre Investimento. Mede o seu lucro líquido em relação à banca inicial." }, 
-                  { label: "YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? "g" : "r", tip: "Eficiência. Mostra a porcentagem de lucro sobre todo o volume financeiro apostado." }, 
+                {[{ label: "RET. BANCA", val: fmtPct(stats.roi), color: stats.roi >= 0 ? "g" : "r", tip: "Retorno sobre a banca inicial. Quanto sua banca cresceu em percentual." },
+                  { label: "ROI / YIELD", val: fmtPct(stats.yield), color: stats.yield >= 0 ? "g" : "r", tip: "Padrão da indústria. Lucro líquido dividido pelo volume total apostado (stake). Acima de +5% por 100+ apostas é excepcional." },
                   { label: "TAXA DE ACERTO", val: `${stats.winRate.toFixed(1)}%`, color: "text", tip: "Porcentagem de vitórias em relação ao total de apostas concluídas." }, 
                   { label: "CLV MÉDIO", val: stats.avgCLV != null ? fmtPct(stats.avgCLV) : "—", color: stats.avgCLV != null ? (stats.avgCLV >= 0 ? "g" : "r") : "muted", tip: "Closing Line Value. Se positivo, significa que você bateu a casa de aposta e comprou odds maiores do que o valor de fechamento (O que garante lucro a longo prazo)." }].map(k => (
                   <div key={k.label} className="card">
@@ -2613,69 +2682,222 @@ export default function BankrollVault() {
                 </>
             </div>}
 
-            {/* KELLY */}
-            {view === "kelly" && <div className="card" style={{ maxWidth: 700, margin: "0 auto" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                <Calculator size={20} color="var(--primary)" />
-                <span className="section-title" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  CALCULADORA CRITÉRIO DE KELLY
-                  <InfoTooltip text="O Critério de Kelly é a fórmula matemática de ouro das apostas. Ele calcula a porcentagem exata da sua banca que deve ser apostada com base na sua probabilidade para maximizar o lucro a longo prazo e reduzir a chance de quebra a zero." />
-                </span>
-              </div>
-              <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, lineHeight: 1.6 }}>Calcule o tamanho ideal (stake) para sua aposta com base na sua vantagem matemática estimada. Informe sua probabilidade real e a odd oferecida pela casa.</p>
-              
-              <div className="grid-2">
-                <div className="form-group">
-                  <span className="form-label">SUA PROBABILIDADE ESTIMADA (%)</span>
-                  <input type="number" placeholder="ex: 55" value={kellyForm.prob} onChange={e => setKellyForm(p => ({ ...p, prob: e.target.value }))} className="input" />
-                </div>
-                <div className="form-group">
-                  <span className="form-label">ODDS DA CASA</span>
-                  <input type="number" placeholder="ex: 1.85" value={kellyForm.odds} onChange={e => setKellyForm(p => ({ ...p, odds: e.target.value }))} className="input" />
-                </div>
-              </div>
-              
-              <div className="form-group" style={{ marginBottom: 32 }}>
-                <span className="form-label">BANKROLL ATUAL (R$) — vazio = usa saldo total</span>
-                <input type="number" placeholder={stats.currentBankroll.toFixed(2)} value={kellyForm.bankroll} onChange={e => setKellyForm(p => ({ ...p, bankroll: e.target.value }))} className="input" />
+            {/* KELLY / CALCULADORAS */}
+            {view === "kelly" && <div style={{ maxWidth: 700, margin: "0 auto" }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+                {[["kelly","Kelly"],["dutch","Dutching"],["arb","Arbitragem"]].map(([t,label]) => (
+                  <button key={t} onClick={() => setCalcTab(t)} style={{ padding: "8px 20px", borderRadius: 20, fontSize: 13, fontWeight: 600, border: "1px solid", borderColor: calcTab === t ? "var(--primary)" : "var(--border)", background: calcTab === t ? "rgba(59,130,246,0.15)" : "transparent", color: calcTab === t ? "var(--primary)" : "var(--muted)", cursor: "pointer" }}>
+                    {label}
+                  </button>
+                ))}
               </div>
 
-              {kellyForm.prob && (parseFloat(kellyForm.prob) <= 0 || parseFloat(kellyForm.prob) >= 100) && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#f59e0b", fontSize: 13, marginBottom: 16 }}>
-                  <AlertTriangle size={15} /> Probabilidade deve ser entre 1% e 99%.
+              {calcTab === "kelly" && <div className="card">
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <Calculator size={20} color="var(--primary)" />
+                  <span className="section-title" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    CALCULADORA CRITÉRIO DE KELLY
+                    <InfoTooltip text="O Critério de Kelly é a fórmula matemática de ouro das apostas. Ele calcula a porcentagem exata da sua banca que deve ser apostada com base na sua probabilidade para maximizar o lucro a longo prazo e reduzir a chance de quebra a zero." />
+                  </span>
                 </div>
-              )}
-              {kellyForm.odds && parseFloat(kellyForm.odds) <= 1 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#f59e0b", fontSize: 13, marginBottom: 16 }}>
-                  <AlertTriangle size={15} /> Odds devem ser maiores que 1.00 para haver valor positivo.
-                </div>
-              )}
+                <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, lineHeight: 1.6 }}>Calcule o tamanho ideal (stake) para sua aposta com base na sua vantagem matemática estimada. Informe sua probabilidade real e a odd oferecida pela casa.</p>
 
-              {kellyResult && (
-                <div className="card animate-fade-in" style={{ background: kellyResult.hasValue ? "linear-gradient(180deg, rgba(0,212,138,0.08) 0%, transparent 100%)" : "linear-gradient(180deg, rgba(255,61,90,0.08) 0%, transparent 100%)", borderColor: kellyResult.hasValue ? "rgba(0,212,138,0.3)" : "rgba(255,61,90,0.3)", padding: "24px" }}>
-                  {kellyResult.hasValue
-                    ? <>
-                        <span className="kpi-label" style={{ color: "var(--primary)" }}>STAKE RECOMENDADO</span>
-                        <div style={{ fontSize: 40, fontWeight: 700, color: "var(--primary)", marginBottom: 8, fontFamily: "var(--font-mono)" }}>{fmt(kellyResult.amount)}</div>
-                        <div style={{ fontSize: 14, color: "var(--text)", marginBottom: 16, fontWeight: 500 }}>{kellyResult.fraction.toFixed(2)}% do bankroll</div>
-                        <div style={{ padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: 8, fontSize: 12, color: "var(--muted)", lineHeight: 1.6, borderLeft: "3px solid var(--accent)" }}>
-                          <strong style={{ color: "var(--text)" }}>Dica Profissional:</strong> A fórmula Kelly completa é altamente agressiva e propensa a alta variância. É padrão na indústria utilizar o <strong>Meio-Kelly ({fmt(kellyResult.amount / 2)})</strong> ou até <strong>Quarto-Kelly ({fmt(kellyResult.amount / 4)})</strong> para proteger seu bankroll contra sequências de perdas.
-                        </div>
-                      </>
-                    : <>
-                        <div style={{ fontSize: 32, marginBottom: 8 }}>🚫</div>
-                        <span className="kpi-label" style={{ color: "var(--danger)" }}>{kellyResult.fraction === 0 ? "SEM VANTAGEM — EV NEUTRO" : "EV NEGATIVO — NÃO APOSTE"}</span>
-                        <div style={{ fontSize: 14, color: "var(--text)", lineHeight: 1.6, marginTop: 8 }}>
-                          {kellyResult.fraction === 0
-                            ? "Sua probabilidade estimada empata exatamente com a odd oferecida. Não há vantagem matemática — o Kelly recomenda "
-                            : "Sua probabilidade estimada é inferior à odd oferecida. A expectativa é de prejuízo a longo prazo — o Kelly recomenda "}
-                          <strong style={{ color: "var(--danger)", fontSize: 16 }}>não apostar</strong>.
-                        </div>
-                      </>
-                  }
+                <div className="grid-2">
+                  <div className="form-group">
+                    <span className="form-label">SUA PROBABILIDADE ESTIMADA (%)</span>
+                    <input type="number" placeholder="ex: 55" value={kellyForm.prob} onChange={e => setKellyForm(p => ({ ...p, prob: e.target.value }))} className="input" />
+                  </div>
+                  <div className="form-group">
+                    <span className="form-label">ODDS DA CASA</span>
+                    <input type="number" placeholder="ex: 1.85" value={kellyForm.odds} onChange={e => setKellyForm(p => ({ ...p, odds: e.target.value }))} className="input" />
+                  </div>
                 </div>
-              )}
+
+                <div className="form-group" style={{ marginBottom: 32 }}>
+                  <span className="form-label">BANKROLL ATUAL (R$) — vazio = usa saldo total</span>
+                  <input type="number" placeholder={stats.currentBankroll.toFixed(2)} value={kellyForm.bankroll} onChange={e => setKellyForm(p => ({ ...p, bankroll: e.target.value }))} className="input" />
+                </div>
+
+                {kellyForm.prob && (parseFloat(kellyForm.prob) <= 0 || parseFloat(kellyForm.prob) >= 100) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#f59e0b", fontSize: 13, marginBottom: 16 }}>
+                    <AlertTriangle size={15} /> Probabilidade deve ser entre 1% e 99%.
+                  </div>
+                )}
+                {kellyForm.odds && parseFloat(kellyForm.odds) <= 1 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#f59e0b", fontSize: 13, marginBottom: 16 }}>
+                    <AlertTriangle size={15} /> Odds devem ser maiores que 1.00 para haver valor positivo.
+                  </div>
+                )}
+
+                {kellyResult && (
+                  <div className="card animate-fade-in" style={{ background: kellyResult.hasValue ? "linear-gradient(180deg, rgba(0,212,138,0.08) 0%, transparent 100%)" : "linear-gradient(180deg, rgba(255,61,90,0.08) 0%, transparent 100%)", borderColor: kellyResult.hasValue ? "rgba(0,212,138,0.3)" : "rgba(255,61,90,0.3)", padding: "24px" }}>
+                    {kellyResult.hasValue
+                      ? <>
+                          <span className="kpi-label" style={{ color: "var(--primary)" }}>STAKE RECOMENDADO</span>
+                          <div style={{ fontSize: 40, fontWeight: 700, color: "var(--primary)", marginBottom: 8, fontFamily: "var(--font-mono)" }}>{fmt(kellyResult.amount)}</div>
+                          <div style={{ fontSize: 14, color: "var(--text)", marginBottom: 16, fontWeight: 500 }}>{kellyResult.fraction.toFixed(2)}% do bankroll</div>
+                          <div style={{ padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: 8, fontSize: 12, color: "var(--muted)", lineHeight: 1.6, borderLeft: "3px solid var(--accent)" }}>
+                            <strong style={{ color: "var(--text)" }}>Dica Profissional:</strong> A fórmula Kelly completa é altamente agressiva e propensa a alta variância. É padrão na indústria utilizar o <strong>Meio-Kelly ({fmt(kellyResult.amount / 2)})</strong> ou até <strong>Quarto-Kelly ({fmt(kellyResult.amount / 4)})</strong> para proteger seu bankroll contra sequências de perdas.
+                          </div>
+                        </>
+                      : <>
+                          <div style={{ fontSize: 32, marginBottom: 8 }}>🚫</div>
+                          <span className="kpi-label" style={{ color: "var(--danger)" }}>{kellyResult.fraction === 0 ? "SEM VANTAGEM — EV NEUTRO" : "EV NEGATIVO — NÃO APOSTE"}</span>
+                          <div style={{ fontSize: 14, color: "var(--text)", lineHeight: 1.6, marginTop: 8 }}>
+                            {kellyResult.fraction === 0
+                              ? "Sua probabilidade estimada empata exatamente com a odd oferecida. Não há vantagem matemática — o Kelly recomenda "
+                              : "Sua probabilidade estimada é inferior à odd oferecida. A expectativa é de prejuízo a longo prazo — o Kelly recomenda "}
+                            <strong style={{ color: "var(--danger)", fontSize: 16 }}>não apostar</strong>.
+                          </div>
+                        </>
+                    }
+                  </div>
+                )}
+              </div>}
+
+              {calcTab === "dutch" && <div className="card">
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <Calculator size={20} color="var(--primary)" />
+                  <span className="section-title" style={{ marginBottom: 0 }}>CALCULADORA DE DUTCHING</span>
+                </div>
+                <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, lineHeight: 1.6 }}>Distribua sua stake entre múltiplos resultados para garantir o mesmo retorno independente de qual ganhar.</p>
+                {dutchForm.map((row, i) => (
+                  <div key={i} className="form-group">
+                    <span className="form-label">ODD {i+1}</span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <input type="number" placeholder="ex: 2.50" value={row.odds} onChange={e => setDutchForm(f => f.map((r,j) => j===i ? {...r, odds: e.target.value} : r))} className="input" />
+                      {dutchForm.length > 2 && <button type="button" onClick={() => setDutchForm(f => f.filter((_,j) => j!==i))} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--danger)", cursor: "pointer", padding: "8px 12px" }}><X size={14}/></button>}
+                    </div>
+                  </div>
+                ))}
+                {dutchForm.length < 8 && <button type="button" onClick={() => setDutchForm(f => [...f, {odds:""}])} style={{ marginBottom: 20, background: "none", border: "1px dashed var(--border)", borderRadius: 8, color: "var(--muted)", cursor: "pointer", padding: "10px 16px", width: "100%", fontSize: 13 }}>+ Adicionar Outcome</button>}
+                {dutchResult && (
+                  <div className="card animate-fade-in" style={{ background: "rgba(59,130,246,0.06)", borderColor: "rgba(59,130,246,0.3)", padding: 20 }}>
+                    <span className="kpi-label" style={{ color: "var(--primary)", marginBottom: 12, display: "block" }}>DISTRIBUIÇÃO DE STAKES</span>
+                    {dutchResult.stakes.map((s, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: i < dutchResult.stakes.length-1 ? "1px solid var(--border)" : "none" }}>
+                        <span style={{ color: "var(--muted)", fontSize: 14 }}>Outcome {i+1}</span>
+                        <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--text)" }}>{s}% do stake</span>
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(16,185,129,0.1)", borderRadius: 8, fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>
+                      Margem garantida: +{dutchResult.margin}% de lucro sobre o total apostado
+                    </div>
+                  </div>
+                )}
+                {dutchForm.filter(r => parseFloat(r.odds) > 1).length >= 2 && !dutchResult && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger)", fontSize: 13 }}>
+                    <AlertTriangle size={15} /> Odds insuficientes para garantir lucro — total de probabilidades ≥ 100%.
+                  </div>
+                )}
+              </div>}
+
+              {calcTab === "arb" && <div className="card">
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <Calculator size={20} color="var(--accent)" />
+                  <span className="section-title" style={{ marginBottom: 0 }}>CALCULADORA DE ARBITRAGEM</span>
+                </div>
+                <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, lineHeight: 1.6 }}>Detecte oportunidades de arb (surebet) entre duas casas de aposta. Garanta lucro independente do resultado.</p>
+                <div className="grid-2">
+                  <div className="form-group">
+                    <span className="form-label">ODD — CASA 1</span>
+                    <input type="number" placeholder="ex: 2.10" value={arbForm.odds1} onChange={e => setArbForm(f => ({...f, odds1: e.target.value}))} className="input" />
+                  </div>
+                  <div className="form-group">
+                    <span className="form-label">ODD — CASA 2</span>
+                    <input type="number" placeholder="ex: 2.10" value={arbForm.odds2} onChange={e => setArbForm(f => ({...f, odds2: e.target.value}))} className="input" />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginBottom: 24 }}>
+                  <span className="form-label">STAKE TOTAL (R$)</span>
+                  <input type="number" placeholder="ex: 100.00" value={arbForm.stake} onChange={e => setArbForm(f => ({...f, stake: e.target.value}))} className="input" />
+                </div>
+                {arbResult && (
+                  arbResult.isArb
+                    ? <div className="card animate-fade-in" style={{ background: "rgba(16,185,129,0.06)", borderColor: "rgba(16,185,129,0.3)", padding: 20 }}>
+                        <span className="kpi-label" style={{ color: "var(--accent)", marginBottom: 12, display: "block" }}>✅ ARBITRAGEM DETECTADA — +{arbResult.margin}% garantido</span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 8 }}>
+                            <span style={{ color: "var(--muted)" }}>Casa 1 (odd {arbForm.odds1})</span>
+                            <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--text)" }}>R$ {arbResult.s1}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 8 }}>
+                            <span style={{ color: "var(--muted)" }}>Casa 2 (odd {arbForm.odds2})</span>
+                            <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--text)" }}>R$ {arbResult.s2}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "rgba(16,185,129,0.1)", borderRadius: 8, borderLeft: "3px solid var(--accent)" }}>
+                            <span style={{ color: "var(--accent)", fontWeight: 600 }}>Lucro garantido</span>
+                            <span style={{ fontWeight: 800, fontFamily: "var(--font-mono)", color: "var(--accent)", fontSize: 18 }}>R$ {arbResult.profit}</span>
+                          </div>
+                        </div>
+                      </div>
+                    : <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger)", fontSize: 13 }}>
+                        <AlertTriangle size={15} /> Sem arbitragem — margem da casa de {arbResult.margin}%. Tente odds mais altas.
+                      </div>
+                )}
+              </div>}
             </div>}
+
+            {/* SETTINGS */}
+            {view === "settings" && (
+              <div style={{ maxWidth: 600, margin: "0 auto" }}>
+                <div className="card" style={{ marginBottom: 16 }}>
+                  <span className="section-title">PERFIL & CONTA</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div className="form-group">
+                      <span className="form-label">NOME DE EXIBIÇÃO</span>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input type="text" value={userDisplayName} onChange={e => setUserDisplayName(e.target.value)} className="input" placeholder="Seu nome" />
+                        <button onClick={async () => { await updateProfile(auth.currentUser, { displayName: userDisplayName }); }} className="btn" style={{ width: "auto", padding: "10px 16px" }}>
+                          <Check size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <span className="form-label">E-MAIL</span>
+                      <input type="text" value={user?.email || ""} disabled className="input" style={{ opacity: 0.6 }} />
+                    </div>
+                    <div className="form-group">
+                      <span className="form-label">PLANO ATUAL</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                        {isPremium ? <><Crown size={16} color="#f59e0b"/><span style={{ fontWeight: 700, color: "#f59e0b" }}>PRO</span></> : <><span style={{ fontWeight: 600, color: "var(--muted)" }}>FREE</span><span style={{ color: "var(--muted)", fontSize: 12 }}>— {FREE_BET_LIMIT - bets.length} apostas restantes</span></>}
+                        {!isPremium && <button onClick={() => setShowUpgrade(true)} className="btn" style={{ marginLeft: "auto", width: "auto", padding: "6px 14px", fontSize: 12 }}>Fazer Upgrade</button>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="card" style={{ marginBottom: 16 }}>
+                  <span className="section-title">BANCA & METAS</span>
+                  <div className="form-group">
+                    <span className="form-label">BANCA INICIAL (R$)</span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input type="number" value={config.initialBankroll} onChange={e => saveConfig({ ...config, initialBankroll: parseFloat(e.target.value) || 0 })} className="input" />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <span className="form-label">META MENSAL (R$)</span>
+                    <input type="number" value={config.monthlyGoal || ""} onChange={e => saveConfig({ ...config, monthlyGoal: parseFloat(e.target.value) || 0 })} className="input" placeholder="0.00" />
+                  </div>
+                </div>
+                <div className="card">
+                  <span className="section-title">PREFERÊNCIAS</span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>Tema</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>Aparência do aplicativo</div>
+                    </div>
+                    <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 20, border: "1px solid var(--border)", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                      {theme === "dark" ? <Sun size={15}/> : <Moon size={15}/>}{theme === "dark" ? "Claro" : "Escuro"}
+                    </button>
+                  </div>
+                  <div style={{ paddingTop: 16 }}>
+                    <button onClick={handleLogout} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 16px", borderRadius: 10, border: "1px solid rgba(255,61,90,0.3)", background: "rgba(255,61,90,0.05)", color: "var(--danger)", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+                      <LogOut size={16} /> Sair da conta
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ADMIN PANEL */}
             {view === "admin" && isAdmin && <div style={{ maxWidth: 600, margin: "0 auto" }}>
@@ -2750,6 +2972,13 @@ export default function BankrollVault() {
         />
       )}
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} user={user} />}
+
+      {/* OFFLINE BANNER */}
+      {!isOnline && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 2000, background: "#f59e0b", color: "#000", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <AlertTriangle size={14} /> Você está offline — dados podem estar desatualizados
+        </div>
+      )}
 
       {/* PWA INSTALL BANNER */}
       {showInstallBanner && (
