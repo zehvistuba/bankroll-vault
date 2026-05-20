@@ -9,9 +9,9 @@ admin.initializeApp();
 const db = admin.firestore();
 const auth = admin.auth();
 
-const hotmartToken  = defineSecret("HOTMART_WEBHOOK_TOKEN");
-const gmailEmail    = defineSecret("GMAIL_EMAIL");
-const gmailPassword = defineSecret("GMAIL_APP_PASSWORD");
+const hotmartToken = defineSecret("HOTMART_WEBHOOK_TOKEN");
+// Gmail configurado via functions/.env (GMAIL_EMAIL e GMAIL_APP_PASSWORD)
+// Se não configurado, o email de boas-vindas é silenciosamente ignorado
 
 const ACTIVE_EVENTS = ["PURCHASE_APPROVED", "PURCHASE_COMPLETE"];
 const INACTIVE_EVENTS = [
@@ -323,17 +323,17 @@ exports.onUserCreated = authV1.user().onCreate(async (user) => {
 });
 
 // ─── Helper: enviar email via Gmail ──────────────────────────────────────────
+// Requer GMAIL_EMAIL e GMAIL_APP_PASSWORD em functions/.env
+// Se não configurados, retorna sem enviar (não bloqueia o fluxo)
 async function sendEmail({ to, subject, html }) {
+  const user = process.env.GMAIL_EMAIL;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) return;
   const transporter = nodemailer.createTransport({
     service: "gmail",
-    auth: { user: gmailEmail.value(), pass: gmailPassword.value() },
+    auth: { user, pass },
   });
-  await transporter.sendMail({
-    from: `Banca Lógica <${gmailEmail.value()}>`,
-    to,
-    subject,
-    html,
-  });
+  await transporter.sendMail({ from: `Banca Lógica <${user}>`, to, subject, html });
 }
 
 // ─── Admin: alterar premium / admin ──────────────────────────────────────────
