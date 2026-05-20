@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
+import { AuthProvider } from './contexts/AuthContext.jsx'
+import { InnerBetsProvider } from './contexts/BetsContext.jsx'
+import { UIProvider } from './contexts/UIContext.jsx'
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -22,9 +25,15 @@ class ErrorBoundary extends Component {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <AuthProvider>
+        <InnerBetsProvider>
+          <UIProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </UIProvider>
+        </InnerBetsProvider>
+      </AuthProvider>
     </ErrorBoundary>
   </StrictMode>,
 )
