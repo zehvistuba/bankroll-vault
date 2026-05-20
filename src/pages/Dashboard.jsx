@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LayoutDashboard, X, Globe, Lock, RefreshCw, ImageDown, Layers, TrendingUp, TrendingDown, Target } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
@@ -21,6 +21,30 @@ export function Dashboard({
   const navigate = useNavigate();
   const [sharingStats, setSharingStats] = useState(false);
   const [notifDismissed, setNotifDismissed] = useState(() => sessionStorage.getItem("notifBannerDismissed") === "1");
+  const [avantzPicks, setAvantzPicks] = useState(null);
+  const [avantzLoading, setAvantzLoading] = useState(false);
+
+  useEffect(() => {
+    const CACHE_KEY = "avantz_picks_cache";
+    const TTL = 10 * 60 * 1000;
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < TTL) { setAvantzPicks(data); return; }
+      }
+    } catch (_) {}
+    setAvantzLoading(true);
+    fetch("https://valtrix-engine.zehvistuba.workers.dev/api/picks/today", { headers: { "x-api-key": "valtrix-pub-2025" } })
+      .then(r => r.json())
+      .then(d => {
+        const picks = d.ok ? (d.picks || []).slice(0, 4) : [];
+        setAvantzPicks(picks);
+        if (picks.length > 0) try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: picks, ts: Date.now() })); } catch (_) {}
+      })
+      .catch(() => setAvantzPicks([]))
+      .finally(() => setAvantzLoading(false));
+  }, []);
 
   const showNotifBanner = isPushSupported && pushPermission === "default" && pending.length > 0 && !notifDismissed;
 
@@ -97,6 +121,35 @@ export function Dashboard({
           </div>
         ))}
       </div>
+
+      {(avantzLoading || (avantzPicks && avantzPicks.length > 0)) && (
+        <div className="card animate-fade-in" style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <span className="section-title" style={{ margin: 0 }}>PICKS DO DIA</span>
+            <span style={{ fontSize: 10, fontWeight: 700, background: "rgba(139,127,245,0.15)", color: "var(--accent)", borderRadius: 4, padding: "2px 7px", letterSpacing: 0.3 }}>AVANTZ</span>
+            {avantzLoading && <RefreshCw size={12} style={{ animation: "spin 1s linear infinite", marginLeft: 4, color: "var(--muted)" }} />}
+          </div>
+          {avantzPicks?.map((pick, i) => {
+            const regUrl = `/register?source=avantz&event=${encodeURIComponent(pick.match || "")}&odds=${encodeURIComponent(pick.odd || "")}&side=${encodeURIComponent(pick.recommendedSide || "")}&sport=${encodeURIComponent(pick.sport || "")}&ref=${encodeURIComponent(pick.externalId || "")}`;
+            return (
+              <div key={pick.externalId || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < avantzPicks.length - 1 ? "1px solid var(--border)" : "none" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.recommendedTeam}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.match} · {pick.competitionLabel}</div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, marginRight: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--primary)", fontFamily: "var(--font-mono)" }}>{pick.ev != null ? `+${pick.ev}%` : "—"}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1, fontFamily: "var(--font-mono)" }}>@ {pick.odd?.toFixed(2)}</div>
+                </div>
+                <button onClick={() => navigate(regUrl)} style={{ background: "rgba(139,127,245,0.12)", border: "1px solid rgba(139,127,245,0.3)", color: "var(--accent)", borderRadius: 7, padding: "6px 11px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, transition: "background 0.15s" }}>Registrar</button>
+              </div>
+            );
+          })}
+          <div style={{ marginTop: 10, textAlign: "right" }}>
+            <a href="https://valtrix-engine.zehvistuba.workers.dev" target="_blank" rel="noopener" style={{ fontSize: 11, color: "var(--muted)", textDecoration: "none" }}>Ver análise completa no Avantz →</a>
+          </div>
+        </div>
+      )}
 
       {bets.length === 0 && !config.onboardingDone && (
         <div className="card animate-fade-in" style={{ marginBottom: 24, borderColor: "rgba(139,127,245,0.3)", background: "linear-gradient(180deg,rgba(139,127,245,0.06) 0%,transparent 100%)" }}>
