@@ -20,6 +20,13 @@ functions/.env
 functions/.env.*
 !functions/.env.example
 
+# Arquivos locais temporários
+src_backup/
+index_backup.html
+models.json
+*.png
+!public/*.png
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
