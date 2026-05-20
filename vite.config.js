@@ -3,6 +3,21 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  build: {
+    chunkSizeWarningLimit: 600,
+    rolldownOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom") || id.includes("node_modules/react-router")) {
+            return "react-vendor";
+          }
+          if (id.includes("node_modules/firebase")) return "firebase";
+          if (id.includes("node_modules/recharts") || id.includes("node_modules/d3-")) return "charts";
+          if (id.includes("node_modules/@sentry")) return "sentry";
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
