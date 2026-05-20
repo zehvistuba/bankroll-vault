@@ -5,6 +5,7 @@ import { auth, db, googleProvider, fns } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import * as Sentry from "@sentry/react";
 import { FREE_BET_LIMIT } from "./constants/bets";
 import { fmt } from "./utils/formatting";
 import { getBetPL, getCLV, buildSegments } from "./utils/bets";
@@ -72,6 +73,7 @@ export default function BankrollVault() {
       setUser(u);
       setUserDisplayName(u?.displayName || u?.email?.split("@")[0] || "");
       setAuthLoading(false);
+      Sentry.setUser(u ? { id: u.uid, email: u.email } : null);
     });
     return () => unsub();
   }, []);
