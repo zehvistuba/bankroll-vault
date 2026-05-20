@@ -1,4 +1,5 @@
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
+const { auth: authV1 } = require("firebase-functions/v1");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 
@@ -176,6 +177,42 @@ exports.adminGetUser = onCall({ cors: true }, async (request) => {
     subscription: userData.subscription || { status: "free" },
     isAdmin: userData.isAdmin === true,
   };
+});
+
+// ─── Auth: processar pendingSubscriptions ao criar conta ─────────────────────
+exports.onUserCreated = authV1.user().onCreate(async (user) => {
+  const { email, uid } = user;
+  if (!email) return;
+
+  const key = email.replace("@", "_at_");
+  const pendingRef = db.doc(`pendingSubscriptions/${key}`);
+  const pendingSnap = await pendingRef.get();
+
+  if (!pendingSnap.exists) {
+    console.log(`ℹ️ Sem assinatura pendente para ${email}`);
+    return;
+  }
+
+  const pending = pendingSnap.data();
+  console.log(`🔄 Processando assinatura pendente para ${email} (uid=${uid})`);
+
+  const update = {
+    subscription: {
+      status: "active",
+      hotmartEmail: email,
+      hotmartCode: pending.hotmartCode || null,
+      activatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      cancelledAt: null,
+    },
+  };
+
+  if (pending.isAdmin) {
+    update.isAdmin = true;
+  }
+
+  await db.doc(`users/${uid}`).set(update, { merge: true });
+  await pendingRef.delete();
+  console.log(`✅ PRO ativado via pendingSubscriptions: uid=${uid} email=${email}`);
 });
 
 // ─── Admin: alterar premium / admin ──────────────────────────────────────────

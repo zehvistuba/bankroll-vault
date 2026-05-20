@@ -325,8 +325,8 @@ export default function BankrollVault() {
   useEffect(() => {
     if (!loaded || onboardingChecked.current) return;
     onboardingChecked.current = true;
-    if (config.onboardingCompleted) return;
-    if (bets.length > 0) { saveConfig({ ...config, onboardingCompleted: true }); return; }
+    if (config.onboardingDone) return;
+    if (bets.length > 0) { saveConfig({ ...config, onboardingDone: true }); return; }
     setOnboardBanca(String(config.initialBankroll || "1000"));
     setOnboardStep(1);
   }, [loaded]);
@@ -426,7 +426,7 @@ export default function BankrollVault() {
 
   const finishOnboarding = useCallback(() => {
     setOnboardStep(0);
-    saveConfig({ ...config, onboardingCompleted: true });
+    saveConfig({ ...config, onboardingDone: true });
   }, [config, saveConfig]);
 
   const onboardNext = useCallback(() => {
