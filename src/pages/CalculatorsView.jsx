@@ -96,11 +96,22 @@ export function CalculatorsView({ currentBankroll }) {
           <div className="card animate-fade-in" style={{ background: kellyResult.hasValue ? "linear-gradient(180deg, rgba(0,212,138,0.08) 0%, transparent 100%)" : "linear-gradient(180deg, rgba(255,61,90,0.08) 0%, transparent 100%)", borderColor: kellyResult.hasValue ? "rgba(0,212,138,0.3)" : "rgba(255,61,90,0.3)", padding: "24px" }}>
             {kellyResult.hasValue
               ? <>
-                  <span className="kpi-label" style={{ color: "var(--primary)" }}>STAKE RECOMENDADO</span>
-                  <div style={{ fontSize: 40, fontWeight: 700, color: "var(--primary)", marginBottom: 8, fontFamily: "var(--font-mono)" }}>{fmt(kellyResult.amount)}</div>
-                  <div style={{ fontSize: 14, color: "var(--text)", marginBottom: 16, fontWeight: 500 }}>{kellyResult.fraction.toFixed(2)}% do bankroll</div>
-                  <div style={{ padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: 8, fontSize: 12, color: "var(--muted)", lineHeight: 1.6, borderLeft: "3px solid var(--accent)" }}>
-                    <strong style={{ color: "var(--text)" }}>Dica Profissional:</strong> A fórmula Kelly completa é altamente agressiva e propensa a alta variância. É padrão na indústria utilizar o <strong>Meio-Kelly ({fmt(kellyResult.amount / 2)})</strong> ou até <strong>Quarto-Kelly ({fmt(kellyResult.amount / 4)})</strong> para proteger seu bankroll contra sequências de perdas.
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+                    {[
+                      { label: "KELLY COMPLETO", amount: kellyResult.amount, frac: kellyResult.fraction, accent: "var(--primary)", note: "agressivo" },
+                      { label: "½ KELLY", amount: kellyResult.amount / 2, frac: kellyResult.fraction / 2, accent: "var(--accent)", note: "recomendado" },
+                      { label: "¼ KELLY", amount: kellyResult.amount / 4, frac: kellyResult.fraction / 4, accent: "var(--green)", note: "conservador" },
+                    ].map(({ label, amount, frac, accent, note }) => (
+                      <div key={label} style={{ background: "rgba(0,0,0,0.25)", borderRadius: 10, padding: "14px 12px", border: `1px solid ${accent}30`, textAlign: "center" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.8, marginBottom: 6 }}>{label}</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: accent, fontFamily: "var(--font-mono)", lineHeight: 1 }}>{fmt(amount)}</div>
+                        <div style={{ fontSize: 11, color: accent, fontFamily: "var(--font-mono)", marginTop: 4 }}>{frac.toFixed(2)}%</div>
+                        <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 4, fontWeight: 600 }}>{note}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ padding: "10px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 8, fontSize: 11, color: "var(--muted)", lineHeight: 1.5, borderLeft: "3px solid var(--accent)" }}>
+                    Kelly completo maximiza lucro no longo prazo mas exige tolerância a alta variância. ½ Kelly é o padrão da indústria — equilibra crescimento e proteção de banca.
                   </div>
                 </>
               : <>

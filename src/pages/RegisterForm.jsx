@@ -29,6 +29,25 @@ export function RegisterForm({
   const [formError, setFormError] = useState("");
   const [advancedMode, setAdvancedMode] = useState(() => localStorage.getItem("formAdvanced") === "true");
 
+  // Deep link do Avantz: ?source=avantz&event=...&odds=...&side=...&ref=...&sport=...
+  useEffect(() => {
+    if (editingBet) return; // edição tem prioridade
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("source") !== "avantz") return;
+    const sportParam = params.get("sport") || "";
+    const sportMap = { football: "Futebol", basketball: "Basquete", tennis: "Tênis", american_football: "Futebol Americano" };
+    setForm(prev => ({
+      ...prev,
+      description: params.get("event") || prev.description,
+      odds: params.get("odds") || prev.odds,
+      sport: sportMap[sportParam] || prev.sport,
+      source: "Avantz",
+      notes: params.get("ref") ? `Avantz ref: ${params.get("ref")}` : prev.notes,
+    }));
+    // Limpar params da URL sem recarregar
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
   useEffect(() => {
     if (editingBet) {
       setForm({

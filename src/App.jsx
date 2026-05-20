@@ -229,7 +229,7 @@ export default function BankrollVault() {
         totalPL += pl; bankroll += pl;
         if (bet.result === "win") wins++;
         if (bet.result === "loss") losses++;
-        chartData.push({ d: bet.date.slice(5), v: Math.round(bankroll * 100) / 100 });
+        chartData.push({ d: bet.date ? bet.date.slice(5) : "?", v: Math.round(bankroll * 100) / 100 });
       }
       if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
     });
@@ -564,8 +564,9 @@ export default function BankrollVault() {
       {/* SIDEBAR FOR DESKTOP, BOTTOM NAV FOR MOBILE */}
       <nav className="app-nav">
         <div className="sidebar-header">
-          <div style={{ display: "flex", alignItems: "center", marginTop: 12, paddingLeft: 4 }}>
-            <img src="/logo-banca-logica.png" alt="Banca Lógica" style={{ height: 38 }} />
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, marginTop: 4 }}>
+            <img src="/logo-banca-logica.png" alt="Banca Lógica" style={{ height: 56, width: 56, borderRadius: 12, objectFit: "cover" }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", letterSpacing: 0.3, lineHeight: 1.2 }}>Banca Lógica</span>
           </div>
         </div>
         {NAV.map(({ id, icon: Icon, label }) => (
@@ -623,7 +624,7 @@ export default function BankrollVault() {
         {/* HEADER */}
         <header className="app-header">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img src="/logo-banca-logica.png" alt="Banca Lógica" style={{ height: 28 }} />
+            <img src="/logo-banca-logica.png" alt="Banca Lógica" style={{ height: 32, width: 32, borderRadius: 8, objectFit: "cover" }} />
             <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
               Olá, {userDisplayName.split(" ")[0] || ""}!
             </span>
