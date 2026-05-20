@@ -422,8 +422,13 @@ export default function BankrollVault() {
       if (!dismissed.includes(id))
         alerts.push({ id, icon: "📉", title: `Yield negativo: ${stats.yield.toFixed(1)}%`, msg: "Após 20+ apostas, um Yield abaixo de −5% indica que seus critérios de seleção precisam de revisão. Analise seus padrões na aba Análise.", color: "danger" });
     }
+    if (isTrialExpired) {
+      const id = "trial_expired";
+      if (!dismissed.includes(id))
+        alerts.push({ id, icon: "⏰", title: "Seu período de teste PRO encerrou", msg: "Faça upgrade para continuar com análises avançadas, exportações e acesso ilimitado a apostas.", color: "warning" });
+    }
     return alerts;
-  }, [currentStreak, pendingExposure, stats.currentBankroll, stats.totalBets, stats.roi, stats.yield, config.dismissedAlerts]);
+  }, [currentStreak, pendingExposure, stats.currentBankroll, stats.totalBets, stats.roi, stats.yield, config.dismissedAlerts, isTrialExpired]);
 
   const handleInstall = useCallback(async () => {
     if (!installPrompt) return;
@@ -508,6 +513,7 @@ export default function BankrollVault() {
   const now = new Date();
   const trialEndsAt = subscription?.trialEndsAt?.toDate?.() ?? null;
   const isOnTrial = subscription?.status === "trial" && trialEndsAt && trialEndsAt > now;
+  const isTrialExpired = subscription?.status === "trial" && trialEndsAt && trialEndsAt <= now;
   const trialDaysLeft = isOnTrial ? Math.max(1, Math.ceil((trialEndsAt - now) / 86400000)) : 0;
   const isPremium = subscription?.status === "active" || isOnTrial;
   const betLimitReached = !isPremium && bets.length >= FREE_BET_LIMIT;
@@ -727,6 +733,9 @@ export default function BankrollVault() {
                 userDisplayName={userDisplayName}
                 setUserDisplayName={setUserDisplayName}
                 isPremium={isPremium}
+                isOnTrial={isOnTrial}
+                isTrialExpired={isTrialExpired}
+                trialDaysLeft={trialDaysLeft}
                 config={config}
                 saveConfig={saveConfig}
                 handleLogout={handleLogout}

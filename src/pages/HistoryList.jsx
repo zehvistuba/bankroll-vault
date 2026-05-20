@@ -40,7 +40,7 @@ export function HistoryList({ bets, isPremium, updateBetResult, deleteBet, start
       `🎯 *Banca Lógica* — ${bet.bookmaker}`,
       `📅 ${bet.date}`,
       `⚽ ${bet.description}`,
-      `📊 @${bet.odds?.toFixed(2)} | ${fmt(bet.stake)}`,
+      `📊 @${(+bet.odds || 0).toFixed(2)} | ${fmt(bet.stake)}`,
       bet.result === "win" ? `✅ Green: +${fmt(pl)}` : bet.result === "loss" ? `❌ Red: -${fmt(Math.abs(pl))}` : `⏳ Pendente`,
     ];
     const text = lines.join("\n");
@@ -130,6 +130,7 @@ export function HistoryList({ bets, isPremium, updateBetResult, deleteBet, start
                 <div style={{ marginBottom: 6, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                   <span className={`badge ${rclass}`}>{rlabel}</span>
                   {bet.type === "multiple" && <span className="badge acc" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Layers size={10} />MÚLT {bet.selections?.length}×</span>}
+                  {bet.type === "lay" && <span className="badge" style={{ color: "#38bdf8", border: "1px solid rgba(56,189,248,0.4)", background: "rgba(56,189,248,0.1)" }}>LAY</span>}
                   <span className="bet-name">{bet.description}</span>
                 </div>
                 <div className="bet-meta">{bet.date} • {bet.type === "multiple" ? bet.bookmaker : `${bet.sport} • ${bet.market} • ${bet.bookmaker}`}</div>
@@ -146,7 +147,7 @@ export function HistoryList({ bets, isPremium, updateBetResult, deleteBet, start
                   </div>
                 )}
                 <div className="bet-stats">
-                  <span className="bet-stat" style={{ color: "var(--accent)", fontWeight: 700 }}>@{bet.odds.toFixed(2)}{bet.type === "multiple" ? " comb." : ""}</span>
+                  <span className="bet-stat" style={{ color: "var(--accent)", fontWeight: 700 }}>@{(+bet.odds || 0).toFixed(2)}{bet.type === "multiple" ? " comb." : ""}</span>
                   <span className="bet-stat" style={{ color: "var(--text)" }}>{fmt(bet.stake)}</span>
                   {bet.result !== "pending" && <span className="bet-stat" style={{ color: pl >= 0 ? "var(--primary)" : "var(--danger)", fontWeight: 700 }}>P&L: {pl >= 0 ? "+" : ""}{fmt(Math.abs(pl))}</span>}
                   {bet.result === "pending" && <span className="bet-stat" style={{ color: "var(--muted)" }}>Ret: {fmt(bet.stake * bet.odds)}</span>}

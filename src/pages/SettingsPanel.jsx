@@ -4,7 +4,7 @@ import { auth } from "../firebase";
 import { updateProfile } from "firebase/auth";
 import { FREE_BET_LIMIT } from "../constants/bets";
 
-export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPremium, config, saveConfig, handleLogout, theme, setTheme, bets, setShowUpgrade }) {
+export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPremium, isOnTrial, isTrialExpired, trialDaysLeft, config, saveConfig, handleLogout, theme, setTheme, bets, setShowUpgrade }) {
   const [localBankroll, setLocalBankroll] = useState(config.initialBankroll ?? 0);
   const [localGoal, setLocalGoal] = useState(config.monthlyGoal ?? 0);
   const [localUnit, setLocalUnit] = useState(config.unitValue ?? "");
@@ -42,13 +42,22 @@ export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPre
           <div className="form-group">
             <span className="form-label">PLANO ATUAL</span>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 8, border: "1px solid var(--border)" }}>
-              {isPremium ? (
+              {isPremium && !isOnTrial && (
                 <><Crown size={16} color="#f59e0b" /><span style={{ fontWeight: 700, color: "#f59e0b" }}>PRO</span></>
-              ) : (
-                <><span style={{ fontWeight: 600, color: "var(--muted)" }}>FREE</span>
-                <span style={{ color: "var(--muted)", fontSize: 12 }}>— {FREE_BET_LIMIT - bets.length} apostas restantes</span></>
               )}
-              {!isPremium && (
+              {isOnTrial && (
+                <><Crown size={16} color="#a78bfa" />
+                <span style={{ fontWeight: 700, color: "#a78bfa" }}>TRIAL PRO</span>
+                <span style={{ color: "var(--muted)", fontSize: 12 }}>— {trialDaysLeft} dia{trialDaysLeft !== 1 ? "s" : ""} restante{trialDaysLeft !== 1 ? "s" : ""}</span></>
+              )}
+              {isTrialExpired && (
+                <><span style={{ fontWeight: 600, color: "#f87171" }}>Trial expirado</span></>
+              )}
+              {!isPremium && !isTrialExpired && (
+                <><span style={{ fontWeight: 600, color: "var(--muted)" }}>FREE</span>
+                <span style={{ color: "var(--muted)", fontSize: 12 }}>— {Math.max(0, FREE_BET_LIMIT - bets.length)} apostas restantes</span></>
+              )}
+              {(!isPremium || isTrialExpired) && (
                 <button onClick={() => setShowUpgrade(true)} className="btn" style={{ marginLeft: "auto", width: "auto", padding: "6px 14px", fontSize: 12 }}>
                   Fazer Upgrade
                 </button>
