@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { Sparkles, RefreshCw, Info, Eye, EyeOff } from "lucide-react";
+import { httpsCallable } from "firebase/functions";
+import { fns } from "../firebase";
 import { GEMINI_MODELS } from "../constants/checkout";
 import { SYSTEM_PROMPT } from "../constants/prompts";
 import { getBetPL, getCLV } from "../utils/bets";
@@ -88,25 +90,22 @@ export function AIInsights({ stats, marketSeg, bookSeg, sportSeg, bets, apiKey, 
     };
 
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ parts: [{ text: `Analise meu histórico de apostas:\n\n${JSON.stringify(payload, null, 2)}` }] }],
-          generationConfig: { temperature: 0.35, maxOutputTokens: 2048 }
-        })
+      const geminiProxy = httpsCallable(fns, "geminiProxy", { timeout: 60000 });
+      const result = await geminiProxy({
+        model,
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ parts: [{ text: `Analise meu histórico de apostas:\n\n${JSON.stringify(payload, null, 2)}` }] }],
+        generationConfig: { temperature: 0.35, maxOutputTokens: 2048 },
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const text = result.data.text || "";
       if (!text) throw new Error("Resposta vazia da API");
       setInsight(text);
     } catch (err) {
       const msg = err.message || "";
-      if (msg.includes("API key not valid") || msg.includes("invalid API key")) setError("API Key inválida. Verifique sua chave no Google AI Studio.");
+      if (msg.includes("Chave da API Gemini não configurada")) setError("Configure sua API Key do Google Gemini em Análise → Inteligência IA.");
+      else if (msg.includes("API key not valid") || msg.includes("invalid API key")) setError("API Key inválida. Verifique sua chave no Google AI Studio.");
       else if (msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")) setError("Limite de requisições atingido. Aguarde alguns minutos e tente novamente.");
-      else if (msg.includes("timeout")) setError("Tempo esgotado. Verifique sua conexão e tente novamente.");
+      else if (msg.includes("timeout") || msg.includes("deadline")) setError("Tempo esgotado. Verifique sua conexão e tente novamente.");
       else setError("Erro ao gerar análise: " + msg);
     } finally { setLoading(false); }
   };

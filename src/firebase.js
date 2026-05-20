@@ -4,13 +4,13 @@ import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAUKEC49_R4NAYMcn0VmDA4tnMqQvuxHeQ",
-  authDomain: "banca-logica.firebaseapp.com",
-  projectId: "banca-logica",
-  storageBucket: "banca-logica.firebasestorage.app",
-  messagingSenderId: "257701858814",
-  appId: "1:257701858814:web:0aa9047e0ea07f01f244af",
-  measurementId: "G-MV3B92JY1Z"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);

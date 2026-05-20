@@ -15,6 +15,8 @@ export const defaultSelection = () => ({
 
 export const defaultForm = () => ({
   date: new Date().toISOString().split("T")[0],
+  time: "",
+  isLive: false,
   betType: "simple",
   sport: "Futebol",
   market: "1x2",

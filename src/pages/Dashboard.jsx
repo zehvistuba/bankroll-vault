@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LayoutDashboard, X, Globe, Lock, RefreshCw, ImageDown, Layers, TrendingUp, TrendingDown, Target } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { fmt, fmtPct } from "../utils/formatting";
 import { generateStatsCard, shareAsImage } from "../utils/canvas";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -149,6 +149,33 @@ export function Dashboard({
               />
               <Line type="monotone" dataKey="v" stroke={stats.totalPL >= 0 ? "var(--primary)" : "var(--danger)"} strokeWidth={3} dot={{ r: 0 }} activeDot={{ r: 6, fill: stats.totalPL >= 0 ? "var(--primary)" : "var(--danger)", stroke: "#000", strokeWidth: 2 }} animationDuration={1000} />
             </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {stats.drawdownData?.length > 2 && stats.maxDrawdown > 0.5 && (
+        <div className="card" style={{ marginBottom: 24, padding: "24px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <span className="section-title" style={{ margin: 0 }}>DRAWDOWN</span>
+            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--danger)", fontWeight: 700 }}>
+              Máx: -{stats.maxDrawdown.toFixed(1)}%
+            </span>
+          </div>
+          <ResponsiveContainer width="100%" height={140}>
+            <AreaChart data={stats.drawdownData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--danger)" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="var(--danger)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="d" tick={{ fill: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} dy={8} />
+              <YAxis tick={{ fill: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }} tickFormatter={v => `${v.toFixed(0)}%`} axisLine={false} tickLine={false} domain={["auto", 0]} />
+              <ReferenceLine y={0} stroke="var(--border)" />
+              <Tooltip contentStyle={{ background: "rgba(10,10,16,0.9)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, fontFamily: "var(--font-mono)" }} formatter={v => [`${v.toFixed(1)}%`, "Drawdown"]} labelStyle={{ color: "var(--muted)" }} itemStyle={{ color: "var(--danger)" }} />
+              <Area type="monotone" dataKey="dd" stroke="var(--danger)" strokeWidth={2} fill="url(#ddGrad)" dot={false} animationDuration={800} />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       )}

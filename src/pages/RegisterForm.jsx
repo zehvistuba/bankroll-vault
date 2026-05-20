@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Camera, RefreshCw, Layers, AlertTriangle, X } from "lucide-react";
-import { db } from "../firebase";
+import { db, fns } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { SPORTS, MARKETS, BOOKMAKERS, FREE_BET_LIMIT } from "../constants/bets";
 import { EXTRACTION_PROMPT } from "../constants/prompts";
 import { fmt } from "../utils/formatting";
@@ -29,6 +30,8 @@ export function RegisterForm({
     if (editingBet) {
       setForm({
         date: editingBet.date,
+        time: editingBet.time || "",
+        isLive: editingBet.isLive || false,
         betType: editingBet.type === "multiple" ? "multiple" : "simple",
         sport: editingBet.sport || "Futebol",
         market: editingBet.market || "1x2",
@@ -80,13 +83,13 @@ export function RegisterForm({
     setExtracting(true); setExtractError("");
     try {
       const { base64, mimeType } = await compressImage(file);
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: mimeType, data: base64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 4096 } })
+      const geminiProxy = httpsCallable(fns, "geminiProxy", { timeout: 60000 });
+      const result = await geminiProxy({
+        model: "gemini-2.5-flash",
+        contents: [{ parts: [{ text: EXTRACTION_PROMPT }, { inline_data: { mime_type: mimeType, data: base64 } }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 4096 },
       });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error.message);
-      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const raw = result.data.text || "";
       const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const start = cleaned.indexOf("{");
       const end = cleaned.lastIndexOf("}");
@@ -134,10 +137,10 @@ export function RegisterForm({
       if (!form.stake || valid.length < 2) return null;
       const parsed = valid.map(s => ({ ...s, odds: parseFloat(s.odds) }));
       const combinedOdds = Math.round(parsed.reduce((acc, s) => acc * s.odds, 1) * 100) / 100;
-      return { type: "multiple", date: form.date, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") };
+      return { type: "multiple", date: form.date, time: form.time || null, isLive: form.isLive, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") };
     } else {
       if (!form.description || !form.odds || !form.stake) return null;
-      return { type: "simple", date: form.date, sport: form.sport, market: form.market, bookmaker: form.bookmaker, description: form.description, odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake), result: form.result, notes: form.notes };
+      return { type: "simple", date: form.date, time: form.time || null, isLive: form.isLive, sport: form.sport, market: form.market, bookmaker: form.bookmaker, description: form.description, odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake), result: form.result, notes: form.notes };
     }
   };
 
@@ -238,6 +241,16 @@ export function RegisterForm({
               <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} className="input" />
             </div>
             <div className="form-group">
+              <span className="form-label">HORA — opcional</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} className="input" style={{ flex: 1 }} />
+                <button type="button" onClick={() => setForm(p => ({ ...p, isLive: !p.isLive }))}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 8, border: "1px solid", borderColor: form.isLive ? "rgba(255,61,90,0.5)" : "var(--border)", background: form.isLive ? "rgba(255,61,90,0.1)" : "transparent", color: form.isLive ? "var(--danger)" : "var(--muted)", fontWeight: 700, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "var(--font-sans)", letterSpacing: 1, flexShrink: 0 }}>
+                  {form.isLive ? "🔴 LIVE" : "PRÉ-JOGO"}
+                </button>
+              </div>
+            </div>
+            <div className="form-group">
               <span className="form-label">STAKE (R$)</span>
               <input type="number" placeholder="100.00" step="any" value={form.stake} onChange={e => setForm(p => ({ ...p, stake: e.target.value }))} className="input" />
               {form.stake && parseFloat(form.stake) > currentBankroll * 0.2 && (
@@ -307,6 +320,16 @@ export function RegisterForm({
             <div className="form-group">
               <span className="form-label">DATA</span>
               <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} className="input" />
+            </div>
+            <div className="form-group">
+              <span className="form-label">HORA — opcional</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} className="input" style={{ flex: 1 }} />
+                <button type="button" onClick={() => setForm(p => ({ ...p, isLive: !p.isLive }))}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 8, border: "1px solid", borderColor: form.isLive ? "rgba(255,61,90,0.5)" : "var(--border)", background: form.isLive ? "rgba(255,61,90,0.1)" : "transparent", color: form.isLive ? "var(--danger)" : "var(--muted)", fontWeight: 700, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "var(--font-sans)", letterSpacing: 1, flexShrink: 0 }}>
+                  {form.isLive ? "🔴 LIVE" : "PRÉ-JOGO"}
+                </button>
+              </div>
             </div>
             <div className="form-group">
               <span className="form-label">STAKE (R$)</span>

@@ -12,8 +12,8 @@ export function ScenarioSimulator({ bets, initialBankroll }) {
     const initial = initialBankroll || 1000;
     const wins = settled.filter(b => b.result === "win").length;
     const p = settled.length > 0 ? wins / settled.length : 0.5;
-    let rBR = initial, kBR = initial, hBR = initial, fBR = initial;
-    const chartData = [{ n: 0, real: initial, kelly: initial, half: initial, fixed: initial }];
+    let rBR = initial, kBR = initial, hBR = initial, qBR = initial, fBR = initial;
+    const chartData = [{ n: 0, real: initial, kelly: initial, half: initial, quarter: initial, fixed: initial }];
 
     for (const bet of settled) {
       const b = Math.max(0.01, bet.odds - 1);
@@ -22,8 +22,9 @@ export function ScenarioSimulator({ bets, initialBankroll }) {
       rBR  = Math.max(1, rBR  + (isWin ? bet.stake * b : -bet.stake));
       kBR  = Math.max(1, kBR  + (isWin ? kf       * kBR  * b : -kf       * kBR));
       hBR  = Math.max(1, hBR  + (isWin ? kf / 2   * hBR  * b : -kf / 2   * hBR));
+      qBR  = Math.max(1, qBR  + (isWin ? kf / 4   * qBR  * b : -kf / 4   * qBR));
       fBR  = Math.max(1, fBR  + (isWin ? 0.01      * fBR  * b : -0.01      * fBR));
-      chartData.push({ n: chartData.length, real: +rBR.toFixed(2), kelly: +kBR.toFixed(2), half: +hBR.toFixed(2), fixed: +fBR.toFixed(2) });
+      chartData.push({ n: chartData.length, real: +rBR.toFixed(2), kelly: +kBR.toFixed(2), half: +hBR.toFixed(2), quarter: +qBR.toFixed(2), fixed: +fBR.toFixed(2) });
     }
 
     const calcDD = (key) => {
@@ -38,10 +39,11 @@ export function ScenarioSimulator({ bets, initialBankroll }) {
     return {
       chartData, winRate: p,
       summary: {
-        real:  { label: "Real (suas apostas)", color: "#10B981", final: rBR, roi: (rBR - initial) / initial * 100, dd: calcDD("real"),  key: "real" },
-        kelly: { label: "Kelly Completo",       color: "#8b7ff5", final: kBR, roi: (kBR - initial) / initial * 100, dd: calcDD("kelly"), key: "kelly" },
-        half:  { label: "Meio-Kelly",           color: "#f59e0b", final: hBR, roi: (hBR - initial) / initial * 100, dd: calcDD("half"),  key: "half" },
-        fixed: { label: "1% Fixo",              color: "#808098", final: fBR, roi: (fBR - initial) / initial * 100, dd: calcDD("fixed"), key: "fixed" },
+        real:    { label: "Real (suas apostas)", color: "#10B981", final: rBR, roi: (rBR - initial) / initial * 100, dd: calcDD("real"),    key: "real" },
+        kelly:   { label: "Kelly Completo",      color: "#8b7ff5", final: kBR, roi: (kBR - initial) / initial * 100, dd: calcDD("kelly"),   key: "kelly" },
+        half:    { label: "Meio-Kelly (½)",      color: "#f59e0b", final: hBR, roi: (hBR - initial) / initial * 100, dd: calcDD("half"),    key: "half" },
+        quarter: { label: "¼ Kelly",             color: "#38bdf8", final: qBR, roi: (qBR - initial) / initial * 100, dd: calcDD("quarter"), key: "quarter" },
+        fixed:   { label: "1% Fixo",             color: "#808098", final: fBR, roi: (fBR - initial) / initial * 100, dd: calcDD("fixed"),   key: "fixed" },
       },
     };
   }, [settled, initialBankroll]);
@@ -78,15 +80,16 @@ export function ScenarioSimulator({ bets, initialBankroll }) {
             <Tooltip
               contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
               formatter={(val, name) => {
-                const labels = { real: "Real", kelly: "Kelly Completo", half: "Meio-Kelly", fixed: "1% Fixo" };
+                const labels = { real: "Real", kelly: "Kelly Completo", half: "Meio-Kelly (½)", quarter: "¼ Kelly", fixed: "1% Fixo" };
                 return [fmtR(val), labels[name]];
               }}
               labelFormatter={n => `Aposta #${n}`}
             />
-            <Line type="monotone" dataKey="real"  stroke="#00d48a" strokeWidth={2.5} dot={false} />
-            <Line type="monotone" dataKey="kelly" stroke="#8b7ff5" strokeWidth={2}   dot={false} strokeDasharray="7 3" />
-            <Line type="monotone" dataKey="half"  stroke="#f59e0b" strokeWidth={2}   dot={false} strokeDasharray="4 2" />
-            <Line type="monotone" dataKey="fixed" stroke="#808098" strokeWidth={1.5} dot={false} strokeDasharray="2 4" />
+            <Line type="monotone" dataKey="real"    stroke="#00d48a" strokeWidth={2.5} dot={false} />
+            <Line type="monotone" dataKey="kelly"   stroke="#8b7ff5" strokeWidth={2}   dot={false} strokeDasharray="7 3" />
+            <Line type="monotone" dataKey="half"    stroke="#f59e0b" strokeWidth={2}   dot={false} strokeDasharray="4 2" />
+            <Line type="monotone" dataKey="quarter" stroke="#38bdf8" strokeWidth={2}   dot={false} strokeDasharray="3 3" />
+            <Line type="monotone" dataKey="fixed"   stroke="#808098" strokeWidth={1.5} dot={false} strokeDasharray="2 4" />
           </LineChart>
         </ResponsiveContainer>
 

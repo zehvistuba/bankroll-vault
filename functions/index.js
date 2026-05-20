@@ -54,6 +54,19 @@ exports.hotmartWebhook = onRequest(
     console.log(`📨 Evento: ${event} | Comprador: ${email}`);
 
     try {
+      // Idempotência: deduplica por transactionId para evitar processamento duplo em retries
+      const transactionId = data.purchase?.transaction || data.subscription?.subscriber?.code;
+      if (transactionId) {
+        const eventKey = `${transactionId}_${event}`;
+        const dedupRef = db.doc(`processedWebhooks/${eventKey}`);
+        const dedupSnap = await dedupRef.get();
+        if (dedupSnap.exists) {
+          console.log(`⏭️ Evento duplicado ignorado: ${eventKey}`);
+          return res.json({ received: true, status: "duplicate" });
+        }
+        await dedupRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), email, event });
+      }
+
       let uid;
       try {
         const userRecord = await auth.getUserByEmail(email);
@@ -185,6 +198,29 @@ exports.adminGetUser = onCall({ cors: true }, async (request) => {
     subscription: userData.subscription || { status: "free" },
     isAdmin: userData.isAdmin === true,
   };
+});
+
+// ─── Proxy Gemini (evita expor API key no cliente) ───────────────────────────
+exports.geminiProxy = onCall({ cors: true, timeoutSeconds: 60 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated");
+
+  const uid = request.auth.uid;
+  const userSnap = await db.doc(`users/${uid}`).get();
+  const apiKey = userSnap.data()?.geminiKey;
+  if (!apiKey) throw new HttpsError("failed-precondition", "Chave da API Gemini não configurada. Acesse Análise → Inteligência IA.");
+
+  const { model, contents, systemInstruction, generationConfig } = request.data;
+  if (!model || !contents) throw new HttpsError("invalid-argument", "model e contents são obrigatórios");
+
+  const body = { contents, generationConfig: generationConfig || {} };
+  if (systemInstruction) body.systemInstruction = systemInstruction;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await resp.json();
+
+  if (data.error) throw new HttpsError("internal", data.error.message);
+  return { text: data.candidates?.[0]?.content?.parts?.[0]?.text || "" };
 });
 
 // ─── Auth: processar pendingSubscriptions ao criar conta ─────────────────────

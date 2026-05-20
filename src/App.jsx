@@ -222,7 +222,14 @@ export default function BankrollVault() {
       }
       if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
     });
-    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: filteredBets.length, chartData };
+    let peakDD = config.initialBankroll, maxDrawdown = 0;
+    const drawdownData = chartData.map(pt => {
+      if (pt.v > peakDD) peakDD = pt.v;
+      const dd = peakDD > 0 ? (peakDD - pt.v) / peakDD * 100 : 0;
+      if (dd > maxDrawdown) maxDrawdown = dd;
+      return { d: pt.d, dd: -dd };
+    });
+    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: filteredBets.length, chartData, drawdownData, maxDrawdown };
   }, [bets, config.initialBankroll, dashPeriod]);
 
   const syncPublicProfile = useCallback(async (enabled) => {
