@@ -1,0 +1,51 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Fundo: azul navy escuro no canto, azul médio no topo central -->
+    <linearGradient id="bg" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B4FCC"/>
+      <stop offset="100%" stop-color="#0D1547"/>
+    </linearGradient>
+    <!-- Swoosh: escuro → azul → esmeralda -->
+    <linearGradient id="swoosh" x1="80" y1="400" x2="390" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#0a0a1a"/>
+      <stop offset="45%"  stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+    <!-- Barras: branco puro no topo, azul claro na base -->
+    <linearGradient id="bar1" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#8ba4f8" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="bar2" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#8ba4f8" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="bar3" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#a0b4ff" stop-opacity="0.65"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fundo com cantos arredondados -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Plataforma oval escura (parte de trás do anel orbital) -->
+  <ellipse cx="255" cy="368" rx="185" ry="46" fill="#07071a" fill-opacity="0.82"/>
+
+  <!-- BARRAS ascendentes (da esquerda para direita) -->
+  <!-- Barra 1 - curta -->
+  <rect x="108" y="268" width="64" height="112" rx="12" fill="url(#bar1)"/>
+  <!-- Barra 2 - média -->
+  <rect x="192" y="210" width="64" height="170" rx="12" fill="url(#bar2)"/>
+  <!-- Barra 3 - alta -->
+  <rect x="276" y="155" width="64" height="225" rx="12" fill="url(#bar3)"/>
+
+  <!-- Arco frontal do anel (parte de frente, de cima) — de baixo-esquerda até canto superior-direito -->
+  <path d="M 72 355 Q 58 230 130 168 Q 200 108 375 118"
+    stroke="url(#swoosh)" stroke-width="22" fill="none"
+    stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Círculo esmeralda no pico do arco -->
+  <circle cx="375" cy="115" r="52" fill="#10B981"/>
+  <circle cx="375" cy="115" r="24" fill="white"/>
+</svg>
