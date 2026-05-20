@@ -3,7 +3,7 @@ import { BarChart2, Download, RefreshCw, CalendarDays, ChevronLeft, ChevronRight
 import { db } from "../firebase";
 import { getDocs, query, collection, orderBy, limit } from "firebase/firestore";
 import { fmt, fmtPct } from "../utils/formatting";
-import { getBetPL } from "../utils/bets";
+import { getBetPL, buildSegments } from "../utils/bets";
 import { RESULT_MAP } from "../constants/bets";
 import { AIInsights } from "../components/AIInsights";
 import { HighlightCards } from "../components/HighlightCards";
@@ -43,6 +43,8 @@ export function AnalyzePanel({
     });
     return map.filter(d => d.bets > 0).map(d => ({ ...d, yield: d.stake > 0 ? d.pl / d.stake * 100 : 0 }));
   }, [bets]);
+
+  const sourceSeg = useMemo(() => buildSegments(bets, "source"), [bets]);
 
   const calendarDays = useMemo(() => {
     const { year, month } = calendarDate;
@@ -241,13 +243,14 @@ export function AnalyzePanel({
           {hasSettled && tabBtn("bookmaker", "Casas de Aposta")}
           {hasSettled && tabBtn("sport", "Esportes")}
           {hasSettled && tabBtn("weekday", "Dias da Semana")}
+          {hasSettled && sourceSeg.length > 1 && tabBtn("source", "Fonte/Tipster")}
           {tabBtn("calendar", "Calendário")}
           {tabBtn("community", "Comunidade")}
           {hasSettled && tabBtn("cenarios", isPremium ? "Cenários" : "Cenários 🔒")}
           {tabBtn("risco", "Risco de Ruína")}
         </div>
         {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
-        {(analyzeTab === "market" || analyzeTab === "bookmaker" || analyzeTab === "sport") && !hasSettled && (
+        {(analyzeTab === "market" || analyzeTab === "bookmaker" || analyzeTab === "sport" || analyzeTab === "source") && !hasSettled && (
           <div className="empty-state">
             <BarChart2 size={48} style={{ marginBottom: 16, color: "var(--border)", margin: "0 auto" }} />
             <div style={{ fontSize: 16, fontWeight: 500 }}>Registre apostas liquidadas para ver os gráficos de performance.</div>
@@ -257,6 +260,7 @@ export function AnalyzePanel({
         {analyzeTab === "bookmaker" && hasSettled && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="PERFORMANCE POR CASA DE APOSTA" data={bookSeg} /></>}
         {analyzeTab === "sport" && hasSettled && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="PERFORMANCE POR ESPORTE" data={sportSeg} /></>}
         {analyzeTab === "weekday" && hasSettled && <><HighlightCards data={weekdaySeg} bestLabel="MELHOR DIA" worstLabel="PIOR DIA" /><SegmentTable title="PERFORMANCE POR DIA DA SEMANA" data={weekdaySeg} /></>}
+        {analyzeTab === "source" && hasSettled && <><HighlightCards data={sourceSeg} bestLabel="MELHOR FONTE" worstLabel="PIOR FONTE" /><SegmentTable title="PERFORMANCE POR FONTE / TIPSTER" data={sourceSeg} /></>}
         {analyzeTab === "calendar" && (
           <div className="card">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
