@@ -1,9 +1,13 @@
+import { useState } from "react";
 import { Check, LogOut, Sun, Moon, Crown } from "lucide-react";
 import { auth } from "../firebase";
 import { updateProfile } from "firebase/auth";
 import { FREE_BET_LIMIT } from "../constants/bets";
 
 export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPremium, config, saveConfig, handleLogout, theme, setTheme, bets, setShowUpgrade }) {
+  const [localBankroll, setLocalBankroll] = useState(config.initialBankroll ?? 0);
+  const [localGoal, setLocalGoal] = useState(config.monthlyGoal ?? 0);
+
   return (
     <div style={{ maxWidth: 600, margin: "0 auto" }}>
       <div className="card" style={{ marginBottom: 16 }}>
@@ -58,8 +62,9 @@ export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPre
           <div style={{ display: "flex", gap: 8 }}>
             <input
               type="number"
-              value={config.initialBankroll}
-              onChange={(e) => saveConfig({ ...config, initialBankroll: parseFloat(e.target.value) || 0 })}
+              value={localBankroll}
+              onChange={(e) => setLocalBankroll(parseFloat(e.target.value) || 0)}
+              onBlur={() => saveConfig({ ...config, initialBankroll: localBankroll })}
               className="input"
             />
           </div>
@@ -68,8 +73,9 @@ export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPre
           <span className="form-label">META MENSAL (R$)</span>
           <input
             type="number"
-            value={config.monthlyGoal || ""}
-            onChange={(e) => saveConfig({ ...config, monthlyGoal: parseFloat(e.target.value) || 0 })}
+            value={localGoal || ""}
+            onChange={(e) => setLocalGoal(parseFloat(e.target.value) || 0)}
+            onBlur={() => saveConfig({ ...config, monthlyGoal: localGoal })}
             className="input"
             placeholder="0.00"
           />

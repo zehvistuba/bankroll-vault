@@ -208,7 +208,7 @@ export default function BankrollVault() {
       : dashPeriod === "90d" ? new Date(now - 90*86400000).toISOString().slice(0,10)
       : null;
     const filteredBets = cutoff ? bets.filter(b => !b.date || b.date >= cutoff) : bets;
-    const sorted = [...filteredBets].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = [...filteredBets].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
     let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
     const chartData = [{ d: "Início", v: config.initialBankroll }];
     sorted.forEach(bet => {
@@ -402,7 +402,7 @@ export default function BankrollVault() {
     if (stats.totalBets >= 20 && stats.yield < -5) {
       const id = "roi_negative";
       if (!dismissed.includes(id))
-        alerts.push({ id, icon: "📉", title: `Ret. Banca negativo: ${stats.yield.toFixed(1)}%`, msg: "Após 20+ apostas, um ROI/Yield abaixo de −5% indica que seus critérios de seleção precisam de revisão. Analise seus padrões na aba Análise.", color: "danger" });
+        alerts.push({ id, icon: "📉", title: `Yield negativo: ${stats.yield.toFixed(1)}%`, msg: "Após 20+ apostas, um Yield abaixo de −5% indica que seus critérios de seleção precisam de revisão. Analise seus padrões na aba Análise.", color: "danger" });
     }
     return alerts;
   }, [currentStreak, pendingExposure, stats.currentBankroll, stats.totalBets, stats.roi, stats.yield, config.dismissedAlerts]);

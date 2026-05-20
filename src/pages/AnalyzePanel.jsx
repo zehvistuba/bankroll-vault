@@ -42,8 +42,12 @@ export function AnalyzePanel({
   const fetchLeaderboard = useCallback(async () => {
     setLeaderboardLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "publicProfiles"), orderBy("roi", "desc"), limit(25)));
-      setLeaderboard(snap.docs.map(d => d.data()));
+      const snap = await getDocs(query(collection(db, "publicProfiles"), orderBy("roi", "desc"), limit(100)));
+      const filtered = snap.docs
+        .map(d => d.data())
+        .filter(p => (p.settledBets || 0) >= 30)
+        .slice(0, 25);
+      setLeaderboard(filtered);
     } catch (_) { setLeaderboard([]); }
     finally { setLeaderboardLoading(false); }
   }, []);
@@ -314,7 +318,7 @@ export function AnalyzePanel({
                 <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}>
                   <Users size={36} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
                   <div style={{ fontSize: 13, marginBottom: 8 }}>Clique em Atualizar para carregar o ranking.</div>
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>Tipsters com perfil público aparecem aqui ordenados por ROI.</div>
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>Tipsters com perfil público e mínimo de 30 apostas encerradas, ordenados por ROI.</div>
                 </div>
               )}
               {leaderboard.length > 0 && (
