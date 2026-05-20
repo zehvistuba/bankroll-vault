@@ -6,6 +6,7 @@ import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPasswor
 import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import * as Sentry from "@sentry/react";
+import { usePushNotifications } from "./hooks/usePushNotifications";
 import { FREE_BET_LIMIT } from "./constants/bets";
 import { fmt } from "./utils/formatting";
 import { getBetPL, getCLV, buildSegments } from "./utils/bets";
@@ -67,6 +68,7 @@ export default function BankrollVault() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [dashPeriod, setDashPeriod] = useState("all");
   const [activeBankroll, setActiveBankroll] = useState("default");
+  const { requestPermission: requestPushPermission, isSupported: isPushSupported, permission: pushPermission } = usePushNotifications(user);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -682,6 +684,8 @@ export default function BankrollVault() {
               dashPeriod={dashPeriod} setDashPeriod={setDashPeriod}
               activeBankroll={activeBankroll} setActiveBankroll={setActiveBankroll}
               bankrolls={config.bankrolls || []}
+              requestPushPermission={requestPushPermission}
+              pushPermission={pushPermission} isPushSupported={isPushSupported}
             />}
 
             {/* REGISTRAR */}

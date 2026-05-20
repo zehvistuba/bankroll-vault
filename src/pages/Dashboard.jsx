@@ -16,12 +16,38 @@ export function Dashboard({
   setShowUpgrade, updateBetResult,
   dashPeriod, setDashPeriod,
   activeBankroll, setActiveBankroll, bankrolls,
+  requestPushPermission, pushPermission, isPushSupported,
 }) {
   const navigate = useNavigate();
   const [sharingStats, setSharingStats] = useState(false);
+  const [notifDismissed, setNotifDismissed] = useState(() => sessionStorage.getItem("notifBannerDismissed") === "1");
+
+  const showNotifBanner = isPushSupported && pushPermission === "default" && pending.length > 0 && !notifDismissed;
+
+  const handleNotifRequest = async () => {
+    await requestPushPermission();
+    setNotifDismissed(true);
+    sessionStorage.setItem("notifBannerDismissed", "1");
+  };
+
+  const handleNotifDismiss = () => {
+    setNotifDismissed(true);
+    sessionStorage.setItem("notifBannerDismissed", "1");
+  };
 
   return (
     <>
+      {showNotifBanner && (
+        <div className="animate-fade-in" style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.25)", borderRadius: 12, padding: "12px 16px", marginBottom: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Ativar lembretes de apostas pendentes</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Receba uma notificação diária quando tiver resultados para registrar.</div>
+          </div>
+          <button onClick={handleNotifRequest} style={{ background: "rgba(56,189,248,0.15)", border: "1px solid rgba(56,189,248,0.4)", color: "#38bdf8", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>Ativar</button>
+          <button onClick={handleNotifDismiss} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 4, display: "flex" }}><X size={15} /></button>
+        </div>
+      )}
       {performanceAlerts.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
           {performanceAlerts.map(alert => (
