@@ -233,7 +233,14 @@ exports.onUserCreated = authV1.user().onCreate(async (user) => {
   const pendingSnap = await pendingRef.get();
 
   if (!pendingSnap.exists) {
-    console.log(`ℹ️ Sem assinatura pendente para ${email}`);
+    // Sem compra pendente — ativar trial de 7 dias
+    console.log(`🎁 Ativando trial PRO 7 dias para ${email} (uid=${uid})`);
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 7);
+    await db.doc(`users/${uid}`).set({
+      subscription: { status: "trial", trialEndsAt: admin.firestore.Timestamp.fromDate(trialEnd) },
+    }, { merge: true });
+    console.log(`✅ Trial ativado até ${trialEnd.toISOString()}`);
     return;
   }
 

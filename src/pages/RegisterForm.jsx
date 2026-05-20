@@ -4,7 +4,7 @@ import { Camera, RefreshCw, Layers, AlertTriangle, X } from "lucide-react";
 import { db, fns } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { SPORTS, MARKETS, BOOKMAKERS, FREE_BET_LIMIT } from "../constants/bets";
+import { SPORTS, MARKETS, BOOKMAKERS, TIPSTERS, FREE_BET_LIMIT } from "../constants/bets";
 import { EXTRACTION_PROMPT } from "../constants/prompts";
 import { fmt } from "../utils/formatting";
 import { defaultForm, defaultSelection } from "../utils/bets";
@@ -41,6 +41,7 @@ export function RegisterForm({
         closingOdds: editingBet.closingOdds != null ? String(editingBet.closingOdds) : "",
         stake: String(editingBet.stake ?? ""),
         result: editingBet.result,
+        source: editingBet.source || "Própria análise",
         notes: editingBet.notes || "",
         prob: "",
         selections: editingBet.type === "multiple" && editingBet.selections?.length
@@ -137,10 +138,10 @@ export function RegisterForm({
       if (!form.stake || valid.length < 2) return null;
       const parsed = valid.map(s => ({ ...s, odds: parseFloat(s.odds) }));
       const combinedOdds = Math.round(parsed.reduce((acc, s) => acc * s.odds, 1) * 100) / 100;
-      return { type: "multiple", date: form.date, time: form.time || null, isLive: form.isLive, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") };
+      return { type: "multiple", date: form.date, time: form.time || null, isLive: form.isLive, source: form.source, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") };
     } else {
       if (!form.description || !form.odds || !form.stake) return null;
-      return { type: "simple", date: form.date, time: form.time || null, isLive: form.isLive, sport: form.sport, market: form.market, bookmaker: form.bookmaker, description: form.description, odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake), result: form.result, notes: form.notes };
+      return { type: "simple", date: form.date, time: form.time || null, isLive: form.isLive, source: form.source, sport: form.sport, market: form.market, bookmaker: form.bookmaker, description: form.description, odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake), result: form.result, notes: form.notes };
     }
   };
 
@@ -288,6 +289,11 @@ export function RegisterForm({
                 {[["pending", "Pendente"], ["win", "Ganhou"], ["loss", "Perdeu"], ["void", "Void"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
+            <div className="form-group">
+              <span className="form-label">FONTE / TIPSTER</span>
+              <input type="text" placeholder="ex: Própria análise, @tipster..." list="tipster-list" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} className="input" />
+              <datalist id="tipster-list">{TIPSTERS.map(t => <option key={t} value={t} />)}</datalist>
+            </div>
             <div className="form-group" style={{ gridColumn: "1 / -1" }}>
               <span className="form-label">NOTAS — opcional</span>
               <input type="text" placeholder="Raciocínio da aposta, contexto..." value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className="input" />
@@ -348,6 +354,10 @@ export function RegisterForm({
             <div className="form-group" style={{ gridColumn: "1 / -1" }}>
               <span className="form-label">ODDS DE FECHAMENTO (CLV) — opcional</span>
               <input type="number" placeholder="Odd combinada final no fechamento" step="0.01" value={form.closingOdds} onChange={e => setForm(p => ({ ...p, closingOdds: e.target.value }))} className="input" />
+            </div>
+            <div className="form-group">
+              <span className="form-label">FONTE / TIPSTER</span>
+              <input type="text" placeholder="ex: Própria análise, @tipster..." list="tipster-list" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} className="input" />
             </div>
             <div className="form-group" style={{ gridColumn: "1 / -1" }}>
               <span className="form-label">NOTAS — opcional</span>

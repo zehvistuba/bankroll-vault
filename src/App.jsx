@@ -494,7 +494,11 @@ export default function BankrollVault() {
 
   const pending = bets.filter(b => b.result === "pending");
   const hasSettled = bets.some(b => b.result !== "pending");
-  const isPremium = subscription?.status === "active";
+  const now = new Date();
+  const trialEndsAt = subscription?.trialEndsAt?.toDate?.() ?? null;
+  const isOnTrial = subscription?.status === "trial" && trialEndsAt && trialEndsAt > now;
+  const trialDaysLeft = isOnTrial ? Math.max(1, Math.ceil((trialEndsAt - now) / 86400000)) : 0;
+  const isPremium = subscription?.status === "active" || isOnTrial;
   const betLimitReached = !isPremium && bets.length >= FREE_BET_LIMIT;
 
 
@@ -569,11 +573,20 @@ export default function BankrollVault() {
             </div>
           </button>
         )}
-        {isPremium && (
+        {isPremium && !isOnTrial && (
           <div className="sidebar-only" style={{ margin: "0 12px 12px", padding: "8px 14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, alignItems: "center", gap: 8 }}>
             <Crown size={14} color="#f59e0b" />
             <span style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b" }}>PLANO PRO ATIVO</span>
           </div>
+        )}
+        {isOnTrial && (
+          <button className="sidebar-only" onClick={() => setShowUpgrade(true)} style={{ margin: "0 12px 12px", padding: "8px 14px", background: "rgba(139,127,245,0.08)", border: "1px solid rgba(139,127,245,0.3)", borderRadius: 10, cursor: "pointer", textAlign: "left", alignItems: "center", gap: 8, transition: "border-color 0.2s" }} onMouseOver={e => e.currentTarget.style.borderColor = "rgba(139,127,245,0.6)"} onMouseOut={e => e.currentTarget.style.borderColor = "rgba(139,127,245,0.3)"}>
+            <Crown size={14} color="var(--accent)" />
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: 0.5 }}>TRIAL PRO</div>
+              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 1 }}>{trialDaysLeft} dia{trialDaysLeft !== 1 ? "s" : ""} restante{trialDaysLeft !== 1 ? "s" : ""}</div>
+            </div>
+          </button>
         )}
         <div className="sidebar-user">
           <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), var(--primary))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0 }}>

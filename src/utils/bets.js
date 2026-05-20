@@ -26,6 +26,7 @@ export const defaultForm = () => ({
   closingOdds: "",
   stake: "",
   result: "pending",
+  source: "Própria análise",
   notes: "",
   prob: "",
   selections: [defaultSelection(), defaultSelection()],

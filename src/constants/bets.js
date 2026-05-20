@@ -13,6 +13,8 @@ export const BOOKMAKERS = [
   "Betnacional", "Pinnacle", "Betfair", "KTO", "Outros",
 ];
 
+export const TIPSTERS = ["Própria análise", "Outros"];
+
 export const RESULT_MAP = {
   win: ["W", "g"],
   loss: ["L", "r"],

@@ -27,6 +27,22 @@ export function AnalyzePanel({
 
   const hasSettled = bets.some(b => b.result !== "pending");
 
+  const weekdaySeg = useMemo(() => {
+    const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const map = DAYS.map(d => ({ name: d, bets: 0, wins: 0, losses: 0, stake: 0, pl: 0 }));
+    bets.forEach(bet => {
+      if (bet.result === "pending" || !bet.date) return;
+      const idx = new Date(bet.date + "T12:00:00").getDay();
+      const pl = getBetPL(bet);
+      map[idx].bets++;
+      map[idx].stake += bet.stake;
+      map[idx].pl += pl;
+      if (bet.result === "win") map[idx].wins++;
+      if (bet.result === "loss") map[idx].losses++;
+    });
+    return map.filter(d => d.bets > 0).map(d => ({ ...d, yield: d.stake > 0 ? d.pl / d.stake * 100 : 0 }));
+  }, [bets]);
+
   const calendarDays = useMemo(() => {
     const { year, month } = calendarDate;
     const firstWeekday = new Date(year, month, 1).getDay();
@@ -223,6 +239,7 @@ export function AnalyzePanel({
           {hasSettled && tabBtn("market", "Mercados")}
           {hasSettled && tabBtn("bookmaker", "Casas de Aposta")}
           {hasSettled && tabBtn("sport", "Esportes")}
+          {hasSettled && tabBtn("weekday", "Dias da Semana")}
           {tabBtn("calendar", "Calendário")}
           {tabBtn("community", "Comunidade")}
           {hasSettled && tabBtn("cenarios", isPremium ? "Cenários" : "Cenários 🔒")}
@@ -237,6 +254,7 @@ export function AnalyzePanel({
         {analyzeTab === "market" && hasSettled && <><HighlightCards data={marketSeg} bestLabel="MELHOR MERCADO" worstLabel="PIOR MERCADO" /><SegmentTable title="PERFORMANCE POR MERCADO" data={marketSeg} /></>}
         {analyzeTab === "bookmaker" && hasSettled && <><HighlightCards data={bookSeg} bestLabel="MELHOR CASA" worstLabel="PIOR CASA" /><SegmentTable title="PERFORMANCE POR CASA DE APOSTA" data={bookSeg} /></>}
         {analyzeTab === "sport" && hasSettled && <><HighlightCards data={sportSeg} bestLabel="MELHOR ESPORTE" worstLabel="PIOR ESPORTE" /><SegmentTable title="PERFORMANCE POR ESPORTE" data={sportSeg} /></>}
+        {analyzeTab === "weekday" && hasSettled && <><HighlightCards data={weekdaySeg} bestLabel="MELHOR DIA" worstLabel="PIOR DIA" /><SegmentTable title="PERFORMANCE POR DIA DA SEMANA" data={weekdaySeg} /></>}
         {analyzeTab === "calendar" && (
           <div className="card">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
