@@ -36,7 +36,7 @@ export function LoginForm({
             <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Mail size={12} /> E-MAIL
             </span>
-            <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="seu@email.com" inputMode="email" autoComplete="email" />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="seu@email.com" autoComplete="email" />
           </div>
           <div className="form-group">
             <span className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
