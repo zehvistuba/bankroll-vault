@@ -1,6 +1,14 @@
-export const getBetPL = (bet) =>
-  bet.result === "win"  ? bet.stake * (bet.odds - 1) :
-  bet.result === "loss" ? -bet.stake : 0;
+export const getBetPL = (bet) => {
+  if (bet.type === "lay") {
+    const comm = bet.commission ?? 5;
+    if (bet.result === "win")  return bet.stake * (1 - comm / 100);
+    if (bet.result === "loss") return -bet.stake * ((bet.odds || 2) - 1);
+    return 0;
+  }
+  if (bet.result === "win")  return bet.stake * (bet.odds - 1);
+  if (bet.result === "loss") return -bet.stake;
+  return 0;
+};
 
 export const getCLV = (bet) =>
   bet.closingOdds ? ((bet.odds - bet.closingOdds) / bet.closingOdds * 100) : null;
@@ -26,6 +34,7 @@ export const defaultForm = () => ({
   closingOdds: "",
   stake: "",
   result: "pending",
+  commission: 5,
   source: "Própria análise",
   notes: "",
   prob: "",

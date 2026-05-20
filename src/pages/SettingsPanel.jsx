@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, LogOut, Sun, Moon, Crown } from "lucide-react";
+import { Check, LogOut, Sun, Moon, Crown, Plus, Trash2 } from "lucide-react";
 import { auth } from "../firebase";
 import { updateProfile } from "firebase/auth";
 import { FREE_BET_LIMIT } from "../constants/bets";
@@ -7,6 +7,9 @@ import { FREE_BET_LIMIT } from "../constants/bets";
 export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPremium, config, saveConfig, handleLogout, theme, setTheme, bets, setShowUpgrade }) {
   const [localBankroll, setLocalBankroll] = useState(config.initialBankroll ?? 0);
   const [localGoal, setLocalGoal] = useState(config.monthlyGoal ?? 0);
+  const [localUnit, setLocalUnit] = useState(config.unitValue ?? "");
+  const [newBankrollName, setNewBankrollName] = useState("");
+  const [newBankrollInitial, setNewBankrollInitial] = useState("");
 
   return (
     <div style={{ maxWidth: 600, margin: "0 auto" }}>
@@ -79,6 +82,50 @@ export function SettingsPanel({ user, userDisplayName, setUserDisplayName, isPre
             className="input"
             placeholder="0.00"
           />
+        </div>
+        <div className="form-group">
+          <span className="form-label">VALOR DA UNIDADE (R$) — opcional</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number"
+              value={localUnit}
+              onChange={(e) => setLocalUnit(e.target.value)}
+              onBlur={() => saveConfig({ ...config, unitValue: parseFloat(localUnit) || null })}
+              className="input"
+              placeholder="ex: 10 → 1u = R$10,00"
+            />
+            {localUnit && <button onClick={() => { setLocalUnit(""); saveConfig({ ...config, unitValue: null }); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "0 12px", cursor: "pointer", fontSize: 12 }}>Remover</button>}
+          </div>
+          {localUnit && parseFloat(localUnit) > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Stakes serão exibidas em unidades no formulário de aposta.</div>}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <span className="section-title">BANCAS ADICIONAIS</span>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Crie bancas separadas por esporte, estratégia ou fonte. Cada aposta pode ser vinculada a uma banca específica.</div>
+        {(config.bankrolls || []).map(b => (
+          <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{b.name}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Banca inicial: R${b.initial?.toFixed(2) ?? "0.00"}</div>
+            </div>
+            <button onClick={() => saveConfig({ ...config, bankrolls: (config.bankrolls || []).filter(x => x.id !== b.id) })}
+              style={{ background: "transparent", border: "none", color: "var(--danger)", cursor: "pointer", padding: 6, display: "flex", opacity: 0.7 }}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+          <input type="text" placeholder="Nome da banca (ex: Futebol)" value={newBankrollName} onChange={e => setNewBankrollName(e.target.value)} className="input" style={{ flex: "2 1 140px" }} />
+          <input type="number" placeholder="Banca inicial (R$)" value={newBankrollInitial} onChange={e => setNewBankrollInitial(e.target.value)} className="input" style={{ flex: "1 1 120px" }} />
+          <button onClick={() => {
+            if (!newBankrollName.trim()) return;
+            const b = { id: crypto.randomUUID(), name: newBankrollName.trim(), initial: parseFloat(newBankrollInitial) || 0 };
+            saveConfig({ ...config, bankrolls: [...(config.bankrolls || []), b] });
+            setNewBankrollName(""); setNewBankrollInitial("");
+          }} className="btn" style={{ width: "auto", padding: "10px 16px", display: "flex", alignItems: "center", gap: 6 }}>
+            <Plus size={14} /> Adicionar
+          </button>
         </div>
       </div>
 

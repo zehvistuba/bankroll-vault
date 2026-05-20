@@ -9,6 +9,7 @@ import { AIInsights } from "../components/AIInsights";
 import { HighlightCards } from "../components/HighlightCards";
 import { SegmentTable } from "../components/SegmentTable";
 import { ScenarioSimulator } from "../components/ScenarioSimulator";
+import { RuinCalculator } from "../components/RuinCalculator";
 
 export function AnalyzePanel({
   bets, stats, monthlyData,
@@ -243,6 +244,7 @@ export function AnalyzePanel({
           {tabBtn("calendar", "Calendário")}
           {tabBtn("community", "Comunidade")}
           {hasSettled && tabBtn("cenarios", isPremium ? "Cenários" : "Cenários 🔒")}
+          {tabBtn("risco", "Risco de Ruína")}
         </div>
         {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
         {(analyzeTab === "market" || analyzeTab === "bookmaker" || analyzeTab === "sport") && !hasSettled && (
@@ -387,6 +389,7 @@ export function AnalyzePanel({
             </div>
           </div>
         )}
+        {analyzeTab === "risco" && <RuinCalculator bets={bets} />}
         {analyzeTab === "cenarios" && (
           isPremium
             ? <ScenarioSimulator bets={bets} initialBankroll={config.initialBankroll} />

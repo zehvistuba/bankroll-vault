@@ -15,6 +15,7 @@ export function Dashboard({
   syncPublicProfile, isPremium, user, userDisplayName,
   setShowUpgrade, updateBetResult,
   dashPeriod, setDashPeriod,
+  activeBankroll, setActiveBankroll, bankrolls,
 }) {
   const navigate = useNavigate();
   const [sharingStats, setSharingStats] = useState(false);
@@ -35,12 +36,18 @@ export function Dashboard({
           ))}
         </div>
       )}
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         {[["7d", "7 dias"], ["30d", "30 dias"], ["90d", "90 dias"], ["all", "Tudo"]].map(([p, label]) => (
           <button key={p} onClick={() => setDashPeriod(p)} style={{ padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, border: "1px solid", borderColor: dashPeriod === p ? "var(--primary)" : "var(--border)", background: dashPeriod === p ? "rgba(59,130,246,0.15)" : "transparent", color: dashPeriod === p ? "var(--primary)" : "var(--muted)", cursor: "pointer", transition: "all 0.15s" }}>
             {label}
           </button>
         ))}
+        {bankrolls?.length > 0 && (
+          <select value={activeBankroll} onChange={e => setActiveBankroll(e.target.value)} className="select" style={{ marginLeft: "auto", fontSize: 12, padding: "6px 12px", height: "auto" }}>
+            <option value="default">Banca principal</option>
+            {bankrolls.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
       </div>
       <div className="grid-4">
         {[{ label: "RET. BANCA", val: fmtPct(stats.roi), color: stats.roi >= 0 ? "g" : "r", tip: "Retorno sobre a banca inicial. Quanto sua banca cresceu em percentual." },

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Camera, RefreshCw, Layers, AlertTriangle, X } from "lucide-react";
+import { Camera, RefreshCw, Layers, AlertTriangle, X, SlidersHorizontal } from "lucide-react";
 import { db, fns } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -14,6 +14,8 @@ export function RegisterForm({
   bets, isPremium,
   geminiKey,
   currentBankroll,
+  unitValue,
+  bankrolls,
   user,
   setShareToast,
   setSyncError,
@@ -25,6 +27,7 @@ export function RegisterForm({
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
   const [formError, setFormError] = useState("");
+  const [advancedMode, setAdvancedMode] = useState(() => localStorage.getItem("formAdvanced") === "true");
 
   useEffect(() => {
     if (editingBet) {
@@ -32,7 +35,9 @@ export function RegisterForm({
         date: editingBet.date,
         time: editingBet.time || "",
         isLive: editingBet.isLive || false,
-        betType: editingBet.type === "multiple" ? "multiple" : "simple",
+        betType: editingBet.type === "lay" ? "lay" : editingBet.type === "multiple" ? "multiple" : "simple",
+        commission: editingBet.commission ?? 5,
+        bankrollId: editingBet.bankrollId || "default",
         sport: editingBet.sport || "Futebol",
         market: editingBet.market || "1x2",
         bookmaker: editingBet.bookmaker || "Bet365",
@@ -133,30 +138,33 @@ export function RegisterForm({
   };
 
   const buildBetData = () => {
+    const base = { date: form.date, time: form.time || null, isLive: form.isLive, source: form.source, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, notes: form.notes, bankrollId: form.bankrollId || "default" };
+    if (form.betType === "lay") {
+      if (!form.description || !form.odds || !form.stake) return null;
+      const odds = parseFloat(form.odds);
+      return { ...base, type: "lay", description: form.description, odds, commission: parseFloat(form.commission) || 5, sport: form.sport, market: form.market };
+    }
     if (form.betType === "multiple") {
       const valid = form.selections.filter(s => s.description && s.odds && parseFloat(s.odds) > 0);
       if (!form.stake || valid.length < 2) return null;
       const parsed = valid.map(s => ({ ...s, odds: parseFloat(s.odds) }));
       const combinedOdds = Math.round(parsed.reduce((acc, s) => acc * s.odds, 1) * 100) / 100;
-      return { type: "multiple", date: form.date, time: form.time || null, isLive: form.isLive, source: form.source, bookmaker: form.bookmaker, stake: parseFloat(form.stake), result: form.result, closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, notes: form.notes, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") };
-    } else {
-      if (!form.description || !form.odds || !form.stake) return null;
-      return { type: "simple", date: form.date, time: form.time || null, isLive: form.isLive, source: form.source, sport: form.sport, market: form.market, bookmaker: form.bookmaker, description: form.description, odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, stake: parseFloat(form.stake), result: form.result, notes: form.notes };
+      return { ...base, type: "multiple", closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, odds: combinedOdds, selections: parsed, description: parsed.map(s => s.description).join(" × ") };
     }
+    if (!form.description || !form.odds || !form.stake) return null;
+    return { ...base, type: "simple", description: form.description, odds: parseFloat(form.odds), closingOdds: form.closingOdds ? parseFloat(form.closingOdds) : null, sport: form.sport, market: form.market };
   };
 
   const addBet = async () => {
     setFormError("");
-    if (form.betType === "simple") {
+    if (form.betType === "lay" || form.betType === "simple") {
       if (!form.description.trim()) { setFormError("Descrição é obrigatória."); return; }
       if (!form.odds || parseFloat(form.odds) <= 1) { setFormError("Informe uma odd válida (maior que 1.00)."); return; }
       if (!form.stake || parseFloat(form.stake) <= 0) { setFormError("Informe o valor do stake."); return; }
-      if (parseFloat(form.stake) > currentBankroll * 5) { setFormError(`Stake não pode ser maior que 5× sua banca (${fmt(currentBankroll * 5)}). Verifique o valor.`); return; }
     } else {
       const valid = form.selections.filter(s => s.description && s.odds && parseFloat(s.odds) > 0);
       if (valid.length < 2) { setFormError("Preencha ao menos 2 seleções com descrição e odds."); return; }
       if (!form.stake || parseFloat(form.stake) <= 0) { setFormError("Informe o valor do stake."); return; }
-      if (parseFloat(form.stake) > currentBankroll * 5) { setFormError(`Stake não pode ser maior que 5× sua banca (${fmt(currentBankroll * 5)}). Verifique o valor.`); return; }
     }
     const data = buildBetData();
     if (!data) return;
@@ -199,11 +207,17 @@ export function RegisterForm({
 
   return (
     <div className="card" style={{ maxWidth: 800, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
         <span className="section-title" style={{ margin: 0 }}>{editingBet ? "EDITAR APOSTA" : `NOVA APOSTA ${!isPremium ? `(${bets.length}/${FREE_BET_LIMIT})` : ""}`}</span>
-        {editingBet && (
-          <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setExtractError(""); navigate("/history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
-        )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => { const next = !advancedMode; setAdvancedMode(next); localStorage.setItem("formAdvanced", String(next)); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: advancedMode ? "var(--accent)" : "var(--muted)", borderRadius: 8, padding: "7px 12px", fontSize: 11, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)", letterSpacing: 0.5 }}>
+            <SlidersHorizontal size={12} />{advancedMode ? "AVANÇADO" : "SIMPLES"}
+          </button>
+          {editingBet && (
+            <button onClick={() => { setEditingBet(null); setForm(defaultForm()); setExtractError(""); navigate("/history"); }} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: "var(--font-sans)" }}>CANCELAR</button>
+          )}
+        </div>
       </div>
 
       <div style={{ marginBottom: 24, padding: "16px 20px", background: "rgba(139,127,245,0.06)", border: "1px dashed rgba(139,127,245,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
@@ -223,12 +237,63 @@ export function RegisterForm({
       </div>
       {extractError && <div style={{ marginBottom: 16, fontSize: 13, color: "var(--danger)", padding: "12px 14px", background: "rgba(255,61,90,0.08)", borderRadius: 8, border: "1px solid rgba(255,61,90,0.2)" }}>{extractError}</div>}
 
-      <div className="bet-type-toggle">
-        <button className={`bet-type-btn ${form.betType === "simple" ? "active" : ""}`} onClick={() => setForm(p => ({ ...p, betType: "simple" }))}>SIMPLES</button>
-        <button className={`bet-type-btn mult ${form.betType === "multiple" ? "active" : ""}`} onClick={() => setForm(p => ({ ...p, betType: "multiple" }))}>
-          <Layers size={13} />MÚLTIPLA
-        </button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        <div className="bet-type-toggle" style={{ margin: 0, flex: "0 0 auto" }}>
+          <button className={`bet-type-btn ${form.betType === "simple" ? "active" : ""}`} onClick={() => setForm(p => ({ ...p, betType: "simple" }))}>SIMPLES</button>
+          <button className={`bet-type-btn mult ${form.betType === "multiple" ? "active" : ""}`} onClick={() => setForm(p => ({ ...p, betType: "multiple" }))}>
+            <Layers size={13} />MÚLTIPLA
+          </button>
+          <button className={`bet-type-btn ${form.betType === "lay" ? "active" : ""}`} onClick={() => setForm(p => ({ ...p, betType: "lay" }))} style={{ borderColor: form.betType === "lay" ? "rgba(56,189,248,0.5)" : undefined, color: form.betType === "lay" ? "#38bdf8" : undefined }}>LAY</button>
+        </div>
+        {bankrolls?.length > 0 && (
+          <select value={form.bankrollId || "default"} onChange={e => setForm(p => ({ ...p, bankrollId: e.target.value }))} className="select" style={{ flex: "1 1 140px", fontSize: 12 }}>
+            <option value="default">Banca principal</option>
+            {bankrolls.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
       </div>
+
+      {form.betType === "lay" && (
+        <div className="grid-2">
+          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <span className="form-label">DESCRIÇÃO</span>
+            <input type="text" placeholder="ex: Palmeiras vence o jogo" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} className="input" />
+          </div>
+          <div className="form-group">
+            <span className="form-label">DATA</span>
+            <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} className="input" />
+          </div>
+          <div className="form-group">
+            <span className="form-label">LAY ODDS</span>
+            <input type="number" placeholder="2.10" step="0.01" value={form.odds} onChange={e => setForm(p => ({ ...p, odds: e.target.value }))} className="input" />
+          </div>
+          <div className="form-group">
+            <span className="form-label">BACK STAKE (R$) — valor do apostador</span>
+            <input type="number" placeholder="50.00" step="any" value={form.stake} onChange={e => setForm(p => ({ ...p, stake: e.target.value }))} className="input" />
+            {form.stake && form.odds && parseFloat(form.odds) > 1 && (
+              <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>
+                Liability: {fmt(parseFloat(form.stake) * (parseFloat(form.odds) - 1))} (sua exposição)
+              </div>
+            )}
+          </div>
+          <div className="form-group">
+            <span className="form-label">COMISSÃO DA EXCHANGE (%)</span>
+            <input type="number" placeholder="5" step="0.1" min="0" max="10" value={form.commission} onChange={e => setForm(p => ({ ...p, commission: e.target.value }))} className="input" />
+          </div>
+          <div className="form-group">
+            <span className="form-label">RESULTADO</span>
+            <select value={form.result} onChange={e => setForm(p => ({ ...p, result: e.target.value }))} className="select">
+              {[["pending","Pendente"],["win","Lay ganhou (seleção perdeu)"],["loss","Lay perdeu (seleção ganhou)"],["void","Void"]].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          {form.stake && form.odds && parseFloat(form.odds) > 1 && parseFloat(form.stake) > 0 && (
+            <div style={{ gridColumn: "1 / -1", padding: "10px 14px", background: "rgba(56,189,248,0.06)", borderRadius: 8, border: "1px solid rgba(56,189,248,0.2)", display: "flex", gap: 24 }}>
+              <div><span style={{ fontSize: 11, color: "var(--muted)" }}>Ganho potencial</span><div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "#38bdf8" }}>+{fmt(parseFloat(form.stake) * (1 - (parseFloat(form.commission) || 5) / 100))}</div></div>
+              <div><span style={{ fontSize: 11, color: "var(--muted)" }}>Risco máximo</span><div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--danger)" }}>-{fmt(parseFloat(form.stake) * (parseFloat(form.odds) - 1))}</div></div>
+            </div>
+          )}
+        </div>
+      )}
 
       {form.betType === "simple" ? (
         <>
@@ -241,18 +306,20 @@ export function RegisterForm({
               <span className="form-label">DATA</span>
               <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} className="input" />
             </div>
-            <div className="form-group">
-              <span className="form-label">HORA — opcional</span>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} className="input" style={{ flex: 1 }} />
-                <button type="button" onClick={() => setForm(p => ({ ...p, isLive: !p.isLive }))}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 8, border: "1px solid", borderColor: form.isLive ? "rgba(255,61,90,0.5)" : "var(--border)", background: form.isLive ? "rgba(255,61,90,0.1)" : "transparent", color: form.isLive ? "var(--danger)" : "var(--muted)", fontWeight: 700, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "var(--font-sans)", letterSpacing: 1, flexShrink: 0 }}>
-                  {form.isLive ? "🔴 LIVE" : "PRÉ-JOGO"}
-                </button>
+            {advancedMode && (
+              <div className="form-group">
+                <span className="form-label">HORA — opcional</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))} className="input" style={{ flex: 1 }} />
+                  <button type="button" onClick={() => setForm(p => ({ ...p, isLive: !p.isLive }))}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 8, border: "1px solid", borderColor: form.isLive ? "rgba(255,61,90,0.5)" : "var(--border)", background: form.isLive ? "rgba(255,61,90,0.1)" : "transparent", color: form.isLive ? "var(--danger)" : "var(--muted)", fontWeight: 700, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "var(--font-sans)", letterSpacing: 1, flexShrink: 0 }}>
+                    {form.isLive ? "🔴 LIVE" : "PRÉ-JOGO"}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             <div className="form-group">
-              <span className="form-label">STAKE (R$)</span>
+              <span className="form-label">STAKE (R$){unitValue ? ` / ${(parseFloat(form.stake) / unitValue || 0).toFixed(2)}u` : ""}</span>
               <input type="number" placeholder="100.00" step="any" value={form.stake} onChange={e => setForm(p => ({ ...p, stake: e.target.value }))} className="input" />
               {form.stake && parseFloat(form.stake) > currentBankroll * 0.2 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12, color: "#f59e0b" }}>
@@ -267,18 +334,24 @@ export function RegisterForm({
               <span className="form-label">ODDS</span>
               <input type="number" placeholder="1.85" step="0.01" value={form.odds} onChange={e => setForm(p => ({ ...p, odds: e.target.value }))} className="input" />
             </div>
-            <div className="form-group">
-              <span className="form-label">ODDS DE FECHAMENTO (CLV)</span>
-              <input type="number" placeholder="Opcional" step="0.01" value={form.closingOdds} onChange={e => setForm(p => ({ ...p, closingOdds: e.target.value }))} className="input" />
-            </div>
-            <div className="form-group">
-              <span className="form-label">ESPORTE</span>
-              <select value={form.sport} onChange={e => setForm(p => ({ ...p, sport: e.target.value }))} className="select">{SPORTS.map(o => <option key={o} value={o}>{o}</option>)}</select>
-            </div>
-            <div className="form-group">
-              <span className="form-label">MERCADO</span>
-              <select value={form.market} onChange={e => setForm(p => ({ ...p, market: e.target.value }))} className="select">{MARKETS.map(o => <option key={o} value={o}>{o}</option>)}</select>
-            </div>
+            {advancedMode && (
+              <div className="form-group">
+                <span className="form-label">ODDS DE FECHAMENTO (CLV)</span>
+                <input type="number" placeholder="Opcional" step="0.01" value={form.closingOdds} onChange={e => setForm(p => ({ ...p, closingOdds: e.target.value }))} className="input" />
+              </div>
+            )}
+            {advancedMode && (
+              <div className="form-group">
+                <span className="form-label">ESPORTE</span>
+                <select value={form.sport} onChange={e => setForm(p => ({ ...p, sport: e.target.value }))} className="select">{SPORTS.map(o => <option key={o} value={o}>{o}</option>)}</select>
+              </div>
+            )}
+            {advancedMode && (
+              <div className="form-group">
+                <span className="form-label">MERCADO</span>
+                <select value={form.market} onChange={e => setForm(p => ({ ...p, market: e.target.value }))} className="select">{MARKETS.map(o => <option key={o} value={o}>{o}</option>)}</select>
+              </div>
+            )}
             <div className="form-group">
               <span className="form-label">CASA DE APOSTA</span>
               <select value={form.bookmaker} onChange={e => setForm(p => ({ ...p, bookmaker: e.target.value }))} className="select">{BOOKMAKERS.map(o => <option key={o} value={o}>{o}</option>)}</select>
@@ -289,15 +362,17 @@ export function RegisterForm({
                 {[["pending", "Pendente"], ["win", "Ganhou"], ["loss", "Perdeu"], ["void", "Void"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
-            <div className="form-group">
-              <span className="form-label">FONTE / TIPSTER</span>
-              <input type="text" placeholder="ex: Própria análise, @tipster..." list="tipster-list" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} className="input" />
-              <datalist id="tipster-list">{TIPSTERS.map(t => <option key={t} value={t} />)}</datalist>
-            </div>
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-              <span className="form-label">NOTAS — opcional</span>
-              <input type="text" placeholder="Raciocínio da aposta, contexto..." value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className="input" />
-            </div>
+            {advancedMode && <>
+              <div className="form-group">
+                <span className="form-label">FONTE / TIPSTER</span>
+                <input type="text" placeholder="ex: Própria análise, @tipster..." list="tipster-list" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} className="input" />
+                <datalist id="tipster-list">{TIPSTERS.map(t => <option key={t} value={t} />)}</datalist>
+              </div>
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <span className="form-label">NOTAS — opcional</span>
+                <input type="text" placeholder="Raciocínio da aposta, contexto..." value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className="input" />
+              </div>
+            </>}
           </div>
           {form.odds && form.stake && parseFloat(form.odds) > 1 && parseFloat(form.stake) > 0 && (
             <div style={{ marginTop: 4, marginBottom: 8, padding: "10px 14px", background: "rgba(0,212,138,0.06)", borderRadius: 8, border: "1px solid rgba(0,212,138,0.15)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -305,20 +380,22 @@ export function RegisterForm({
               <span style={{ fontSize: 15, fontWeight: 700, color: "var(--primary)", fontFamily: "var(--font-mono)" }}>{fmt(parseFloat(form.stake) * parseFloat(form.odds))}</span>
             </div>
           )}
-          <div className="grid-2" style={{ marginBottom: 0 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <span className="form-label">PROB. ESTIMADA (%) — EV</span>
-              <input type="number" placeholder="ex: 58 → calcula seu EV" step="1" min="1" max="99" value={form.prob} onChange={e => setForm(p => ({ ...p, prob: e.target.value }))} className="input" />
-            </div>
-            {formEV && (
-              <div className="form-group" style={{ marginBottom: 0, display: "flex", alignItems: "flex-end" }}>
-                <div style={{ width: "100%", padding: "16px", borderRadius: 10, background: formEV.positive ? "rgba(0,212,138,0.08)" : "rgba(255,61,90,0.08)", border: `1px solid ${formEV.positive ? "rgba(0,212,138,0.3)" : "rgba(255,61,90,0.3)"}` }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>EXPECTED VALUE</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-mono)", color: formEV.positive ? "var(--primary)" : "var(--danger)" }}>{formEV.positive ? "+" : ""}{formEV.pct}%</div>
-                </div>
+          {advancedMode && (
+            <div className="grid-2" style={{ marginBottom: 0 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <span className="form-label">PROB. ESTIMADA (%) — EV</span>
+                <input type="number" placeholder="ex: 58 → calcula seu EV" step="1" min="1" max="99" value={form.prob} onChange={e => setForm(p => ({ ...p, prob: e.target.value }))} className="input" />
               </div>
-            )}
-          </div>
+              {formEV && (
+                <div className="form-group" style={{ marginBottom: 0, display: "flex", alignItems: "flex-end" }}>
+                  <div style={{ width: "100%", padding: "16px", borderRadius: 10, background: formEV.positive ? "rgba(0,212,138,0.08)" : "rgba(255,61,90,0.08)", border: `1px solid ${formEV.positive ? "rgba(0,212,138,0.3)" : "rgba(255,61,90,0.3)"}` }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>EXPECTED VALUE</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-mono)", color: formEV.positive ? "var(--primary)" : "var(--danger)" }}>{formEV.positive ? "+" : ""}{formEV.pct}%</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </>
       ) : (
         <>

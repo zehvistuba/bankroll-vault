@@ -65,6 +65,7 @@ export default function BankrollVault() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [dashPeriod, setDashPeriod] = useState("all");
+  const [activeBankroll, setActiveBankroll] = useState("default");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -207,10 +208,16 @@ export default function BankrollVault() {
       : dashPeriod === "30d" ? new Date(now - 30*86400000).toISOString().slice(0,10)
       : dashPeriod === "90d" ? new Date(now - 90*86400000).toISOString().slice(0,10)
       : null;
-    const filteredBets = cutoff ? bets.filter(b => !b.date || b.date >= cutoff) : bets;
+    const bankrollBets = activeBankroll === "default"
+      ? bets.filter(b => !b.bankrollId || b.bankrollId === "default")
+      : bets.filter(b => b.bankrollId === activeBankroll);
+    const activeBankrollInitial = activeBankroll === "default"
+      ? config.initialBankroll
+      : (config.bankrolls || []).find(b => b.id === activeBankroll)?.initial ?? config.initialBankroll;
+    const filteredBets = cutoff ? bankrollBets.filter(b => !b.date || b.date >= cutoff) : bankrollBets;
     const sorted = [...filteredBets].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-    let bankroll = config.initialBankroll, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
-    const chartData = [{ d: "Início", v: config.initialBankroll }];
+    let bankroll = activeBankrollInitial, totalStake = 0, totalPL = 0, wins = 0, losses = 0, clvSum = 0, clvCount = 0;
+    const chartData = [{ d: "Início", v: activeBankrollInitial }];
     sorted.forEach(bet => {
       const pl = getBetPL(bet); const clv = getCLV(bet);
       if (bet.result !== "pending") {
@@ -222,15 +229,15 @@ export default function BankrollVault() {
       }
       if (clv != null && bet.result !== "pending") { clvSum += clv; clvCount++; }
     });
-    let peakDD = config.initialBankroll, maxDrawdown = 0;
+    let peakDD = activeBankrollInitial, maxDrawdown = 0;
     const drawdownData = chartData.map(pt => {
       if (pt.v > peakDD) peakDD = pt.v;
       const dd = peakDD > 0 ? (peakDD - pt.v) / peakDD * 100 : 0;
       if (dd > maxDrawdown) maxDrawdown = dd;
       return { d: pt.d, dd: -dd };
     });
-    return { currentBankroll: bankroll, totalPL, roi: config.initialBankroll > 0 ? totalPL / config.initialBankroll * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: filteredBets.length, chartData, drawdownData, maxDrawdown };
-  }, [bets, config.initialBankroll, dashPeriod]);
+    return { currentBankroll: bankroll, totalPL, roi: activeBankrollInitial > 0 ? totalPL / activeBankrollInitial * 100 : 0, yield: totalStake > 0 ? totalPL / totalStake * 100 : 0, winRate: (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0, avgCLV: clvCount > 0 ? clvSum / clvCount : null, wins, losses, totalBets: filteredBets.length, chartData, drawdownData, maxDrawdown };
+  }, [bets, config.initialBankroll, config.bankrolls, activeBankroll, dashPeriod]);
 
   const syncPublicProfile = useCallback(async (enabled) => {
     if (!user) return;
@@ -671,6 +678,8 @@ export default function BankrollVault() {
               isPremium={isPremium} user={user} userDisplayName={userDisplayName}
               setShowUpgrade={setShowUpgrade} updateBetResult={updateBetResult}
               dashPeriod={dashPeriod} setDashPeriod={setDashPeriod}
+              activeBankroll={activeBankroll} setActiveBankroll={setActiveBankroll}
+              bankrolls={config.bankrolls || []}
             />}
 
             {/* REGISTRAR */}
@@ -678,6 +687,8 @@ export default function BankrollVault() {
               editingBet={editingBet} setEditingBet={setEditingBet}
               bets={bets} isPremium={isPremium} geminiKey={geminiKey}
               currentBankroll={stats.currentBankroll} user={user}
+              unitValue={config.unitValue || null}
+              bankrolls={config.bankrolls || []}
               setShareToast={setShareToast} setSyncError={setSyncError}
               setShowUpgrade={setShowUpgrade}
             />}
