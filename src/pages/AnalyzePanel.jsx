@@ -39,7 +39,20 @@ export function AnalyzePanel({
     return cells;
   }, [bets, calendarDate]);
 
-  const fetchLeaderboard = useCallback(async () => {
+  const fetchLeaderboard = useCallback(async (forceRefresh = false) => {
+    const CACHE_KEY = "leaderboard_cache";
+    const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+    if (!forceRefresh) {
+      try {
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, ts } = JSON.parse(cached);
+          if (Date.now() - ts < CACHE_TTL) { setLeaderboard(data); return; }
+        }
+      } catch (_) {}
+    }
+
     setLeaderboardLoading(true);
     try {
       const snap = await getDocs(query(collection(db, "publicProfiles"), orderBy("roi", "desc"), limit(100)));
@@ -48,6 +61,7 @@ export function AnalyzePanel({
         .filter(p => (p.settledBets || 0) >= 30)
         .slice(0, 25);
       setLeaderboard(filtered);
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: filtered, ts: Date.now() })); } catch (_) {}
     } catch (_) { setLeaderboard([]); }
     finally { setLeaderboardLoading(false); }
   }, []);
@@ -310,7 +324,7 @@ export function AnalyzePanel({
             <div className="card" style={{ padding: "20px 24px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
                 <span className="section-title" style={{ margin: 0 }}>RANKING DE TIPSTERS</span>
-                <button onClick={fetchLeaderboard} disabled={leaderboardLoading} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "7px 12px", fontSize: 11, cursor: leaderboardLoading ? "not-allowed" : "pointer", fontWeight: 600, transition: "all 0.2s" }}>
+                <button onClick={() => fetchLeaderboard(true)} disabled={leaderboardLoading} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "7px 12px", fontSize: 11, cursor: leaderboardLoading ? "not-allowed" : "pointer", fontWeight: 600, transition: "all 0.2s" }}>
                   <RefreshCw size={12} style={leaderboardLoading ? { animation: "spin 1s linear infinite" } : {}} /> ATUALIZAR
                 </button>
               </div>

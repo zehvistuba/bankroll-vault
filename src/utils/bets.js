@@ -39,11 +39,11 @@ export function buildSegments(bets, key) {
       bet.selections.forEach(sel => {
         const k = sel[key] || "Outros";
         if (!map[k]) map[k] = { name: k, bets: 0, wins: 0, losses: 0, stake: 0, pl: 0 };
-        map[k].bets   += 1 / n;
+        map[k].bets   += 1;          // 1 múltipla que inclui este segmento
         map[k].stake  += bet.stake / n;
         map[k].pl     += pl / n;
-        if (bet.result === "win")  map[k].wins   += 1 / n;
-        if (bet.result === "loss") map[k].losses += 1 / n;
+        if (bet.result === "win")  map[k].wins   += 1;
+        if (bet.result === "loss") map[k].losses += 1;
       });
     } else {
       const k = bet[key] || "Outros";
@@ -57,9 +57,6 @@ export function buildSegments(bets, key) {
   });
   return Object.values(map).map(r => ({
     ...r,
-    bets:   Math.round(r.bets),
-    wins:   Math.round(r.wins),
-    losses: Math.round(r.losses),
-    yield:  r.stake > 0 ? r.pl / r.stake * 100 : 0,
+    yield: r.stake > 0 ? r.pl / r.stake * 100 : 0,
   }));
 }

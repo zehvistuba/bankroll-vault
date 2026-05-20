@@ -1,6 +1,6 @@
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { auth: authV1 } = require("firebase-functions/v1");
-const { defineSecret } = require("firebase-functions/params");
+const { defineSecret, defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -17,8 +17,15 @@ const INACTIVE_EVENTS = [
   "SUBSCRIPTION_CANCELLATION",
 ];
 
-const BOOTSTRAP_PREMIUM = ["zehvistuba@gmail.com", "jvistuba@gmail.com", "bancalogica@gmail.com"];
-const BOOTSTRAP_ADMIN   = ["jvistuba@gmail.com", "bancalogica@gmail.com"];
+// Emails configurados via Firebase Functions config (firebase functions:secrets:set ou .env.local)
+// Fallback para desenvolvimento local — não commitar .env.local
+const bootstrapPremiumParam = defineString("BOOTSTRAP_PREMIUM_EMAILS", { default: "" });
+const bootstrapAdminParam   = defineString("BOOTSTRAP_ADMIN_EMAILS",   { default: "" });
+
+const getBootstrapEmails = () => ({
+  premium: bootstrapPremiumParam.value().split(",").map(e => e.trim()).filter(Boolean),
+  admin:   bootstrapAdminParam.value().split(",").map(e => e.trim()).filter(Boolean),
+});
 
 // ─── Webhook Hotmart ──────────────────────────────────────────────────────────
 exports.hotmartWebhook = onRequest(
@@ -111,6 +118,7 @@ exports.bootstrapAdmins = onRequest(
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    const { premium: BOOTSTRAP_PREMIUM, admin: BOOTSTRAP_ADMIN } = getBootstrapEmails();
     const results = [];
     for (const email of BOOTSTRAP_PREMIUM) {
       const isAdminEmail = BOOTSTRAP_ADMIN.includes(email);
