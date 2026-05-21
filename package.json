@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:copa": "vite --config copa.vite.config.js --port 5174",
+    "build:copa": "vite build --config copa.vite.config.js",
+    "preview:copa": "vite preview --config copa.vite.config.js --port 5174 --outDir dist-copa"
   },
   "dependencies": {
     "@sentry/react": "^10.53.1",
