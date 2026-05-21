@@ -96,17 +96,20 @@ const hexToRgb = (hex) => hex.replace('#','').match(/.{2}/g).map(x => parseInt(x
 // ─── ScoreInput ────────────────────────────────────────────────────────────────
 function ScoreInput({ value, onChange, onAdvance, theme: t, disabled, inputRef }) {
   const [focused, setFocused] = useState(false);
-  const advTimer = useRef(null);
+  const onAdvanceRef = useRef(onAdvance);
+  useEffect(() => { onAdvanceRef.current = onAdvance; }, [onAdvance]);
 
   const handleChange = (e) => {
     const raw = e.target.value;
-    // Aceita até 2 dígitos, clamp 0-30
-    const clamped = raw === '' ? '' : String(Math.max(0, Math.min(30, parseInt(raw) || 0)));
+    // Mantém apenas o último dígito digitado — placar 0-9 avança de imediato,
+    // placar 10-30 usa as setas ↑↓ do teclado
+    const lastChar = raw.length > 1 ? raw.slice(-1) : raw;
+    const clamped = lastChar === '' ? '' : String(Math.max(0, Math.min(9, parseInt(lastChar) || 0)));
     onChange(clamped);
-    // Auto-avança após pausa de 150ms sem digitar
+    // Avança IMEDIATAMENTE dentro do evento (sem timer) — evita problema de
+    // closure stale e bloqueio de focus fora do contexto de gesture do browser
     if (clamped !== '') {
-      if (advTimer.current) clearTimeout(advTimer.current);
-      advTimer.current = setTimeout(() => { onAdvance?.(); }, 150);
+      onAdvanceRef.current?.();
     }
   };
 
