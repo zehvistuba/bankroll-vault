@@ -401,6 +401,16 @@ export default function BankrollVault() {
     return monthlyData.find(d => d.month === m)?.pl ?? null;
   }, [monthlyData]);
 
+  const pending = bets.filter(b => b.result === "pending");
+  const hasSettled = bets.some(b => b.result !== "pending");
+  const now = new Date();
+  const trialEndsAt = subscription?.trialEndsAt?.toDate?.() ?? null;
+  const isOnTrial = subscription?.status === "trial" && trialEndsAt && trialEndsAt > now;
+  const isTrialExpired = subscription?.status === "trial" && trialEndsAt && trialEndsAt <= now;
+  const trialDaysLeft = isOnTrial ? Math.max(1, Math.ceil((trialEndsAt - now) / 86400000)) : 0;
+  const isPremium = subscription?.status === "active" || isOnTrial;
+  const betLimitReached = !isPremium && bets.length >= FREE_BET_LIMIT;
+
   const performanceAlerts = useMemo(() => {
     const dismissed = config.dismissedAlerts || [];
     const alerts = [];
@@ -507,16 +517,6 @@ export default function BankrollVault() {
     setEditingBet(bet);
     navigate("/register");
   };
-
-  const pending = bets.filter(b => b.result === "pending");
-  const hasSettled = bets.some(b => b.result !== "pending");
-  const now = new Date();
-  const trialEndsAt = subscription?.trialEndsAt?.toDate?.() ?? null;
-  const isOnTrial = subscription?.status === "trial" && trialEndsAt && trialEndsAt > now;
-  const isTrialExpired = subscription?.status === "trial" && trialEndsAt && trialEndsAt <= now;
-  const trialDaysLeft = isOnTrial ? Math.max(1, Math.ceil((trialEndsAt - now) / 86400000)) : 0;
-  const isPremium = subscription?.status === "active" || isOnTrial;
-  const betLimitReached = !isPremium && bets.length >= FREE_BET_LIMIT;
 
 
   const NAV = [
