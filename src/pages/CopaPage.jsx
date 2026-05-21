@@ -46,6 +46,23 @@ const THEMES = {
     font: "'Kalam', cursive", glow: 'rgba(196,163,90,0.4)',
     line: 'rgba(196,163,90,0.05)', sepia: 0.25,
   },
+  copa2002: {
+    id: 'copa2002', year: '2002', host: 'COREIA · JAPÃO', name: 'Tabelinha de Bolso', emoji: '📋',
+    tagline: 'Cola no bolso e vai torcer pro Brasil!',
+    primary: '#1B5E20', accent: '#B71C1C',
+    bg: 'linear-gradient(160deg, #FEFCE8 0%, #F5F0C4 55%, #EDE8B5 100%)',
+    paper: 'rgba(255,255,255,0.72)', border: 'rgba(27,94,32,0.45)',
+    text: '#1a1a0a', muted: '#4a6b50',
+    inputBg: 'rgba(21,101,192,0.06)',
+    scoreColor: '#1565C0',
+    scoreSep: 'X',
+    font: "'Kalam', cursive",
+    glow: 'rgba(0,0,0,0.05)',
+    line: 'rgba(27,94,32,0.12)',
+    shadow: '0 6px 24px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12)',
+    cardRadius: 4,
+    flipAnim: 'copaPageFlip 0.38s ease-out',
+  },
 };
 
 // ─── CSS Animations (injetado uma vez) ───────────────────────────────────────
@@ -68,6 +85,12 @@ const COPA_STYLES = `
   @keyframes copaSpin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
+  }
+  @keyframes copaPageFlip {
+    0%   { transform: perspective(900px) rotateY(0deg); opacity: 1; }
+    35%  { transform: perspective(900px) rotateY(-88deg); opacity: 0; }
+    36%  { transform: perspective(900px) rotateY(88deg); opacity: 0; }
+    100% { transform: perspective(900px) rotateY(0deg); opacity: 1; }
   }
   /* Remove setas dos inputs número */
   input[type=number]::-webkit-inner-spin-button,
@@ -151,7 +174,7 @@ function ScoreInput({ value, onChange, onAdvance, theme: t, disabled, inputRef }
         background: focused ? t.inputBg : 'transparent',
         border: 'none', outline: 'none',
         borderBottom: `2px solid ${value !== '' ? t.primary : focused ? t.primary : t.border}`,
-        color: value !== '' ? t.text : t.muted,
+        color: value !== '' ? (t.scoreColor || t.text) : t.muted,
         transition: 'border-color 0.15s, background 0.15s',
         cursor: disabled ? 'default' : 'text',
         borderRadius: '4px 4px 0 0',
@@ -225,8 +248,10 @@ function GroupPanel({ groupKey, predictions, onChange, theme: t, isPublic }) {
       background: t.paper,
       backgroundImage: `${paperLines(t.line)}, ${noise}`,
       border: `1px solid ${t.border}`,
-      borderRadius: 16, padding: '20px 20px',
-      boxShadow: `0 0 40px ${t.glow}, 0 2px 12px rgba(0,0,0,0.5)`,
+      borderRadius: t.cardRadius ?? 16, padding: '20px 20px',
+      boxShadow: t.shadow || `0 0 40px ${t.glow}, 0 2px 12px rgba(0,0,0,0.5)`,
+      animation: t.flipAnim || undefined,
+      transformStyle: 'preserve-3d',
     }}>
       {/* Cabeçalho do grupo */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -234,8 +259,8 @@ function GroupPanel({ groupKey, predictions, onChange, theme: t, isPublic }) {
           {group.teams.map(team => <Flag key={team.id} code={team.flag} size={30} />)}
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11, letterSpacing: 2, color: t.muted, fontFamily: "'Oswald', sans-serif" }}>COPA DO MUNDO 2026</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: t.primary, fontFamily: "'Oswald', sans-serif", letterSpacing: 1 }}>{group.name}</div>
+          <div style={{ fontSize: 11, letterSpacing: 2, color: t.muted, fontFamily: t.id === 'copa2002' ? "'Special Elite', monospace" : "'Oswald', sans-serif" }}>COPA DO MUNDO 2026</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: t.primary, fontFamily: t.id === 'copa2002' ? "'Special Elite', monospace" : "'Oswald', sans-serif", letterSpacing: 1 }}>{group.name}</div>
         </div>
       </div>
 
@@ -274,7 +299,7 @@ function GroupPanel({ groupKey, predictions, onChange, theme: t, isPublic }) {
                   disabled={isPublic}
                   inputRef={el => { inputRefs.current[matchIdx * 2] = el; }}
                 />
-                <span style={{ fontSize: 20, color: t.muted, fontWeight: 300, fontFamily: 'monospace', paddingBottom: 4, userSelect: 'none' }}>×</span>
+                <span style={{ fontSize: t.scoreSep ? 16 : 20, color: t.muted, fontWeight: t.scoreSep ? 700 : 300, fontFamily: t.scoreSep ? "'Oswald', sans-serif" : 'monospace', paddingBottom: 4, userSelect: 'none', letterSpacing: t.scoreSep ? 2 : 0 }}>{t.scoreSep || '×'}</span>
                 <ScoreInput
                   value={p.away}
                   onChange={v => onChange(id, 'away', v)}
@@ -411,7 +436,7 @@ function CopaInner({ user, isPublic, themeId, setThemeId, activeGroup, setActive
       const link = document.createElement('link');
       link.id = 'copa-fonts';
       link.rel = 'stylesheet';
-      link.href = 'https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Oswald:wght@400;600;700;900&display=swap';
+      link.href = 'https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Oswald:wght@400;600;700;900&family=Special+Elite&display=swap';
       document.head.appendChild(link);
     }
     if (!document.getElementById('copa-animations')) {
