@@ -10,6 +10,7 @@ const db = admin.firestore();
 const auth = admin.auth();
 
 const hotmartToken = defineSecret("HOTMART_WEBHOOK_TOKEN");
+const geminiSystemKey = defineSecret("GEMINI_SYSTEM_KEY");
 // Gmail configurado via functions/.env (GMAIL_EMAIL e GMAIL_APP_PASSWORD)
 // Se não configurado, o email de boas-vindas é silenciosamente ignorado
 
@@ -205,13 +206,32 @@ exports.adminGetUser = onCall({ cors: true }, async (request) => {
 });
 
 // ─── Proxy Gemini (evita expor API key no cliente) ───────────────────────────
-exports.geminiProxy = onCall({ cors: true, timeoutSeconds: 60 }, async (request) => {
+exports.geminiProxy = onCall({ cors: true, timeoutSeconds: 60, secrets: [geminiSystemKey] }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated");
 
   const uid = request.auth.uid;
   const userSnap = await db.doc(`users/${uid}`).get();
-  const apiKey = userSnap.data()?.geminiKey;
-  if (!apiKey) throw new HttpsError("failed-precondition", "Chave da API Gemini não configurada. Acesse Análise → Inteligência IA.");
+  const userData = userSnap.exists() ? userSnap.data() : {};
+
+  // Chave pessoal do usuário tem prioridade
+  const userKey = userData?.geminiKey;
+
+  // Fallback: chave do sistema para usuários PRO (plano ativo ou trial)
+  const now = new Date();
+  const sub = userData?.subscription || {};
+  const trialEnd = sub.trialEndsAt?.toDate?.() ?? null;
+  const isPro = sub.status === "active" || (sub.status === "trial" && trialEnd && trialEnd > now);
+  const systemKey = geminiSystemKey.value();
+  const apiKey = userKey || (isPro && systemKey ? systemKey : null);
+
+  if (!apiKey) {
+    throw new HttpsError(
+      "failed-precondition",
+      isPro
+        ? "Chave Gemini do sistema não configurada. Contate o suporte."
+        : "Configure sua API Key Gemini em Análise → Inteligência IA, ou faça upgrade para PRO para usar sem configuração."
+    );
+  }
 
   const { model, contents, systemInstruction, generationConfig } = request.data;
   if (!model || !contents) throw new HttpsError("invalid-argument", "model e contents são obrigatórios");

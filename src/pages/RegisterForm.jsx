@@ -23,6 +23,7 @@ export function RegisterForm({
 }) {
   const navigate = useNavigate();
   const imageInputRef = useRef(null);
+  const extractFromImageRef = useRef(null); // ref para evitar closure stale no paste listener
   const [form, setForm] = useState(defaultForm);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
@@ -46,6 +47,44 @@ export function RegisterForm({
     }));
     // Limpar params da URL sem recarregar
     window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
+  // Manter ref atualizada com a função mais recente (evita closure stale)
+  useEffect(() => { extractFromImageRef.current = extractFromImage; });
+
+  // Colar imagem do clipboard com Ctrl+V
+  useEffect(() => {
+    const handlePaste = (e) => {
+      if (extracting) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) { extractFromImageRef.current?.(file); break; }
+        }
+      }
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [extracting]);
+
+  // Ler imagem compartilhada via PWA Share Target (?share=true)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("share") !== "true") return;
+    window.history.replaceState({}, "", window.location.pathname);
+    caches.open("share-target-v1").then((cache) => {
+      cache.match("/shared-image").then((response) => {
+        if (!response) return;
+        response.blob().then((blob) => {
+          const filename = response.headers.get("X-File-Name") || "shared.jpg";
+          const file = new File([blob], filename, { type: blob.type });
+          extractFromImageRef.current?.(file);
+          cache.delete("/shared-image");
+        });
+      });
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -104,7 +143,6 @@ export function RegisterForm({
   });
 
   const extractFromImage = async (file) => {
-    if (!geminiKey) { setExtractError("Configure a API Key do Gemini primeiro em Análise → Inteligência IA."); return; }
     setExtracting(true); setExtractError("");
     try {
       const { base64, mimeType } = await compressImage(file);
@@ -239,16 +277,25 @@ export function RegisterForm({
         </div>
       </div>
 
-      <div style={{ marginBottom: 24, padding: "16px 20px", background: "rgba(139,127,245,0.06)", border: "1px dashed rgba(139,127,245,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <div
+        style={{ marginBottom: 24, padding: "16px 20px", background: "rgba(139,127,245,0.06)", border: "1px dashed rgba(139,127,245,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f?.type.startsWith("image/")) extractFromImage(f); }}
+      >
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
             <Camera size={15} color="var(--accent)" /> Importar por imagem
           </div>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>Envie um screenshot do cupom — IA preenche o formulário automaticamente</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            {isPremium
+              ? "Screenshot, arrastar, colar (Ctrl+V) ou compartilhar — IA preenche automaticamente"
+              : !geminiKey
+                ? <span style={{ color: "var(--danger)" }}>Configure a API Key Gemini em Análise → IA para usar</span>
+                : "Envie um screenshot do cupom — IA preenche o formulário automaticamente"}
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {!geminiKey && <span style={{ fontSize: 11, color: "var(--danger)" }}>API Key não configurada</span>}
-          <button onClick={() => imageInputRef.current?.click()} disabled={extracting || !geminiKey} style={{ display: "flex", alignItems: "center", gap: 8, background: extracting || !geminiKey ? "var(--border)" : "rgba(139,127,245,0.15)", color: extracting || !geminiKey ? "var(--muted)" : "var(--accent)", border: "1px solid rgba(139,127,245,0.3)", borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: extracting || !geminiKey ? "not-allowed" : "pointer", fontFamily: "var(--font-sans)", transition: "all 0.2s", whiteSpace: "nowrap" }}>
+          <button onClick={() => imageInputRef.current?.click()} disabled={extracting || (!isPremium && !geminiKey)} style={{ display: "flex", alignItems: "center", gap: 8, background: extracting || (!isPremium && !geminiKey) ? "var(--border)" : "rgba(139,127,245,0.15)", color: extracting || (!isPremium && !geminiKey) ? "var(--muted)" : "var(--accent)", border: "1px solid rgba(139,127,245,0.3)", borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: extracting || (!isPremium && !geminiKey) ? "not-allowed" : "pointer", fontFamily: "var(--font-sans)", transition: "all 0.2s", whiteSpace: "nowrap" }}>
             {extracting ? <><RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> LENDO...</> : <><Camera size={13} /> SELECIONAR</>}
           </button>
           <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) extractFromImage(e.target.files[0]); }} />
