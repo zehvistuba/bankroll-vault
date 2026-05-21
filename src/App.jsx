@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, Plus, List, Calculator, BarChart2, RefreshCw, X, Info, LogOut, User, Sun, Moon, AlertTriangle, Crown, Shield } from "lucide-react";
+import { LayoutDashboard, Plus, List, Calculator, BarChart2, RefreshCw, X, Info, LogOut, User, Sun, Moon, AlertTriangle, Crown, Shield, Trophy } from "lucide-react";
 import { auth, db, googleProvider, fns } from "./firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail } from "firebase/auth";
 import { doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, writeBatch, serverTimestamp } from "firebase/firestore";
@@ -16,6 +16,7 @@ import { OnboardingModal } from "./components/OnboardingModal";
 import { BalanceDisplay } from "./components/BalanceDisplay";
 import { LoginForm } from "./pages/LoginForm";
 import { TipsterProfile } from "./pages/TipsterProfile";
+import { CopaPage, CopaShareView } from "./pages/CopaPage";
 import { SettingsPanel } from "./pages/SettingsPanel";
 import { AdminPanel } from "./pages/AdminPanel";
 import { CalculatorsView } from "./pages/CalculatorsView";
@@ -57,6 +58,7 @@ export default function BankrollVault() {
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
   const [milestoneToast, setMilestoneToast] = useState(null);
   const [tipsterUID] = useState(() => new URLSearchParams(window.location.search).get("tipster"));
+  const [copaShareUID] = useState(() => new URLSearchParams(window.location.search).get("share"));
   const [tipsterProfile, setTipsterProfile] = useState(null);
 
   const [bets, setBets] = useState([]);
@@ -474,7 +476,7 @@ export default function BankrollVault() {
     }
   }, [onboardStep, onboardBanca, config, saveConfig, finishOnboarding]);
 
-  const VALID_ROUTES = ["dashboard", "register", "history", "analyze", "kelly", "settings", "admin"];
+  const VALID_ROUTES = ["dashboard", "register", "history", "analyze", "kelly", "copa", "settings", "admin"];
   useEffect(() => {
     if (!loaded) return;
     if (view === "admin" && !isAdmin) { navigate("/dashboard", { replace: true }); return; }
@@ -482,6 +484,10 @@ export default function BankrollVault() {
   }, [view, isAdmin, loaded]);
   if (tipsterUID && tipsterProfile && tipsterUID !== user?.uid)
     return <TipsterProfile tipsterProfile={tipsterProfile} />;
+
+  // Bolão público — acessível sem login
+  if (copaShareUID && (!user || copaShareUID !== user?.uid))
+    return <CopaShareView shareUID={copaShareUID} />;
 
 
   if (authLoading || (user && !loaded)) return (
@@ -525,6 +531,7 @@ export default function BankrollVault() {
     { id: "history", icon: List, label: "Histórico" },
     { id: "analyze", icon: BarChart2, label: "Análise" },
     { id: "kelly", icon: Calculator, label: "Kelly" },
+    { id: "copa", icon: Trophy, label: "Copa 2026" },
     { id: "settings", icon: User, label: "Perfil" },
     ...(isAdmin ? [{ id: "admin", icon: Shield, label: "Admin" }] : []),
   ];
@@ -726,6 +733,9 @@ export default function BankrollVault() {
             />}
             {/* KELLY / CALCULADORAS */}
             {view === "kelly" && <CalculatorsView currentBankroll={stats.currentBankroll} />}
+
+            {/* COPA DO MUNDO 2026 */}
+            {view === "copa" && <CopaPage user={user} />}
 
             {/* SETTINGS */}
             {view === "settings" && (

@@ -33,6 +33,17 @@ service cloud.firestore {
       allow delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
 
+    // Bolão privado — só o dono lê/escreve
+    match /boloes/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Bolão público compartilhável — qualquer um lê, só o dono escreve
+    match /publicBoloes/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Escrito apenas por Cloud Functions (server-side) — nenhum acesso de cliente
     match /processedWebhooks/{docId} {
       allow read, write: if false;
