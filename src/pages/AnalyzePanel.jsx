@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from "react";
-import { BarChart2, Download, RefreshCw, CalendarDays, ChevronLeft, ChevronRight, Crown, Globe, Users } from "lucide-react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { BarChart2, Download, RefreshCw, CalendarDays, ChevronLeft, ChevronRight, Crown, Globe, Users, Zap, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { db } from "../firebase";
 import { getDocs, query, collection, orderBy, limit } from "firebase/firestore";
 import { fmt, fmtPct } from "../utils/formatting";
@@ -25,6 +25,38 @@ export function AnalyzePanel({
   const [calendarDay, setCalendarDay] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+
+  // ── Avantz Performance ─────────────────────────────────────────────────
+  const [avantzPerf, setAvantzPerf] = useState(null);
+  const [avantzPerfLoading, setAvantzPerfLoading] = useState(false);
+  const [avantzWindow, setAvantzWindow] = useState("30d");
+
+  useEffect(() => {
+    if (analyzeTab !== "avantz") return;
+    const CACHE_KEY = `avantz_perf_${avantzWindow}`;
+    const TTL = 5 * 60 * 1000;
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < TTL) { setAvantzPerf(data); return; }
+      }
+    } catch (_) {}
+    setAvantzPerfLoading(true);
+    setAvantzPerf(null);
+    fetch(`https://valtrix-engine.zehvistuba.workers.dev/api/picks/performance?window=${avantzWindow}`, {
+      headers: { "x-api-key": "valtrix-pub-2025" },
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          setAvantzPerf(d);
+          try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: d, ts: Date.now() })); } catch (_) {}
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAvantzPerfLoading(false));
+  }, [analyzeTab, avantzWindow]);
 
   const hasSettled = bets.some(b => b.result !== "pending");
 
@@ -248,6 +280,7 @@ export function AnalyzePanel({
           {tabBtn("community", "Comunidade")}
           {hasSettled && tabBtn("cenarios", isPremium ? "Cenários" : "Cenários 🔒")}
           {tabBtn("risco", "Risco de Ruína")}
+          {tabBtn("avantz", "⚡ Avantz")}
         </div>
         {analyzeTab === "ia" && <AIInsights stats={stats} marketSeg={marketSeg} bookSeg={bookSeg} sportSeg={sportSeg} bets={bets} apiKey={geminiKey} onApiKeyChange={saveGeminiKey} />}
         {(analyzeTab === "market" || analyzeTab === "bookmaker" || analyzeTab === "sport" || analyzeTab === "source") && !hasSettled && (
@@ -409,7 +442,214 @@ export function AnalyzePanel({
                 </button>
               </div>
         )}
+        {analyzeTab === "avantz" && <AvantzPerformanceTab perf={avantzPerf} loading={avantzPerfLoading} window={avantzWindow} setWindow={setAvantzWindow} />}
       </>
+    </div>
+  );
+}
+
+// ── Avantz Performance Tab ─────────────────────────────────────────────────────
+const SPORT_LABELS = {
+  football:   "⚽ Futebol",
+  basketball: "🏀 Basquete",
+  tennis:     "🎾 Tênis",
+  mma:        "🥊 MMA",
+  other:      "🏅 Outros",
+};
+
+function AvantzPerfKPI({ label, value, sub, color }) {
+  return (
+    <div className="card" style={{ flex: 1, minWidth: 120, padding: "16px 18px" }}>
+      <div style={{ fontSize: 10, letterSpacing: 1.5, color: "var(--muted)", fontWeight: 700, marginBottom: 6, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, color: color || "var(--text)", lineHeight: 1.1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function AvantzPerformanceTab({ perf, loading, window: win, setWindow }) {
+  const s = perf?.summary;
+
+  const winRateColor = s?.winRate == null ? "var(--muted)"
+    : s.winRate >= 0.55 ? "#4ade80"
+    : s.winRate >= 0.45 ? "#facc15"
+    : "#f87171";
+
+  const roiColor = s?.roiPerPick == null ? "var(--muted)"
+    : s.roiPerPick > 0 ? "#4ade80"
+    : s.roiPerPick > -0.2 ? "#facc15"
+    : "#f87171";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+            <Zap size={16} color="var(--primary)" />
+            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Performance do Sistema Avantz</span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            Picks gerados automaticamente — rastreados desde 01/Mai/2026
+          </div>
+        </div>
+        {/* Seletor de janela */}
+        <div style={{ display: "flex", gap: 6 }}>
+          {["7d", "30d", "90d", "all"].map(w => (
+            <button key={w} onClick={() => setWindow(w)} style={{
+              padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
+              border: `1px solid ${win === w ? "var(--primary)" : "var(--border)"}`,
+              background: win === w ? "var(--primary)" : "transparent",
+              color: win === w ? "#000" : "var(--muted)",
+              transition: "all 0.15s",
+            }}>
+              {w === "all" ? "Tudo" : w}
+            </button>
+          ))}
+          <a href="https://valtrix-engine.zehvistuba.workers.dev" target="_blank" rel="noopener noreferrer"
+            style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 6, fontSize: 11, border: "1px solid var(--border)", color: "var(--muted)", textDecoration: "none", transition: "color 0.2s" }}
+            onMouseOver={e => e.currentTarget.style.color = "var(--text)"}
+            onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}>
+            <Globe size={11} /> Avantz ↗
+          </a>
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+          <RefreshCw size={20} color="var(--muted)" style={{ animation: "spin 1s linear infinite" }} />
+        </div>
+      )}
+
+      {!loading && !perf && (
+        <div className="card" style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+          <Zap size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
+          <div>Não foi possível carregar os dados do Avantz.</div>
+        </div>
+      )}
+
+      {!loading && perf && s && (
+        <>
+          {/* KPIs */}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <AvantzPerfKPI
+              label="Taxa de Acerto"
+              value={s.winRate != null ? `${(s.winRate * 100).toFixed(1)}%` : "—"}
+              sub={`${s.correct} corretos de ${s.resolved} resolvidos`}
+              color={winRateColor}
+            />
+            <AvantzPerfKPI
+              label="ROI/Pick"
+              value={s.roiPerPick != null ? `${(s.roiPerPick * 100).toFixed(1)}%` : "—"}
+              sub={s.roiTotal != null ? `ROI total: ${(s.roiTotal * 100).toFixed(1)}%` : undefined}
+              color={roiColor}
+            />
+            <AvantzPerfKPI
+              label="Picks Gerados"
+              value={s.total}
+              sub={`${s.pending} pendentes de resultado`}
+            />
+          </div>
+
+          {/* Breakdown por esporte */}
+          {perf.bySport?.length > 0 && (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: "var(--muted)", textTransform: "uppercase" }}>
+                  Performance por Esporte
+                </span>
+              </div>
+              <table className="data-table" style={{ width: "100%" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>Esporte</th>
+                    <th>Picks</th>
+                    <th>Acertos</th>
+                    <th>Win Rate</th>
+                    <th>ROI/Pick</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perf.bySport.map(row => {
+                    const wr = row.winRate;
+                    const roi = row.roiPerPick;
+                    const wrColor = wr == null ? "var(--muted)" : wr >= 0.55 ? "#4ade80" : wr >= 0.45 ? "#facc15" : "#f87171";
+                    const roiColor = roi == null ? "var(--muted)" : roi > 0 ? "#4ade80" : roi > -0.2 ? "#facc15" : "#f87171";
+                    return (
+                      <tr key={row.sport}>
+                        <td style={{ fontWeight: 600 }}>{SPORT_LABELS[row.sport] || row.sport}</td>
+                        <td style={{ textAlign: "center" }}>{row.total}</td>
+                        <td style={{ textAlign: "center" }}>{row.correct}</td>
+                        <td style={{ textAlign: "center", color: wrColor, fontWeight: 700 }}>
+                          {wr != null ? `${(wr * 100).toFixed(1)}%` : "—"}
+                        </td>
+                        <td style={{ textAlign: "center", color: roiColor, fontWeight: 700 }}>
+                          {roi != null ? `${(roi * 100).toFixed(1)}%` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Últimos 10 picks resolvidos */}
+          {perf.recent?.length > 0 && (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: "var(--muted)", textTransform: "uppercase" }}>
+                  Últimos Picks Resolvidos
+                </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {perf.recent.map((pick, i) => {
+                  const isCorrect = pick.correct === true;
+                  const isWrong   = pick.correct === false;
+                  return (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "10px 20px",
+                      borderBottom: i < perf.recent.length - 1 ? "1px solid var(--border)" : "none",
+                      background: isCorrect ? "rgba(74,222,128,0.04)" : isWrong ? "rgba(248,113,113,0.04)" : "transparent",
+                    }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: isCorrect ? "rgba(74,222,128,0.15)" : isWrong ? "rgba(248,113,113,0.15)" : "rgba(255,255,255,0.05)",
+                      }}>
+                        {isCorrect ? <TrendingUp size={13} color="#4ade80" /> : isWrong ? <TrendingDown size={13} color="#f87171" /> : <Minus size={13} color="var(--muted)" />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {pick.match}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                          {SPORT_LABELS[pick.competitionKey?.split("_")[0]] || pick.competitionKey} · {pick.recommendedSide === "home" ? "Casa" : "Fora"} @ {pick.odd?.toFixed(2)}
+                          {pick.ev != null && ` · EV ${(pick.ev * 100).toFixed(1)}%`}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: isCorrect ? "#4ade80" : isWrong ? "#f87171" : "var(--muted)" }}>
+                          {pick.roi != null ? `${(pick.roi * 100).toFixed(0)}%` : "—"}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--muted)" }}>
+                          {pick.resolvedAt ? new Date(pick.resolvedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {s.resolved === 0 && (
+            <div className="card" style={{ textAlign: "center", padding: 32, color: "var(--muted)" }}>
+              <div style={{ fontSize: 13 }}>Nenhum pick resolvido nesta janela de tempo ainda.</div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
