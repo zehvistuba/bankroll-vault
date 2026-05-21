@@ -402,6 +402,23 @@ function CopaInner({ user, isPublic, themeId, setThemeId, activeGroup, setActive
   const groupKeys = Object.keys(GROUPS);
   const groupRef = useRef(null);
 
+  // Injeta fontes e animações em AMBOS os modos (público e autenticado)
+  useEffect(() => {
+    if (!document.getElementById('copa-fonts')) {
+      const link = document.createElement('link');
+      link.id = 'copa-fonts';
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Oswald:wght@400;600;700;900&display=swap';
+      document.head.appendChild(link);
+    }
+    if (!document.getElementById('copa-animations')) {
+      const style = document.createElement('style');
+      style.id = 'copa-animations';
+      style.textContent = COPA_STYLES;
+      document.head.appendChild(style);
+    }
+  }, []);
+
   const scrollGroup = (dir) => {
     const idx = groupKeys.indexOf(activeGroup);
     const next = groupKeys[Math.max(0, Math.min(groupKeys.length - 1, idx + dir))];
@@ -649,23 +666,6 @@ export function CopaPage({ user }) {
   const saveTimer = useRef(null);
 
   const t = THEMES[themeId];
-
-  // Injeta Google Fonts (Kalam + Oswald) e animações CSS
-  useEffect(() => {
-    if (!document.getElementById('copa-fonts')) {
-      const link = document.createElement('link');
-      link.id = 'copa-fonts';
-      link.rel = 'stylesheet';
-      link.href = 'https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Oswald:wght@400;600;700;900&display=swap';
-      document.head.appendChild(link);
-    }
-    if (!document.getElementById('copa-animations')) {
-      const style = document.createElement('style');
-      style.id = 'copa-animations';
-      style.textContent = COPA_STYLES;
-      document.head.appendChild(style);
-    }
-  }, []);
 
   // Carrega previsões do Firestore
   useEffect(() => {
