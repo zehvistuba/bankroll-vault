@@ -4,6 +4,11 @@ import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
+// Necessário para registerType: 'autoUpdate' funcionar corretamente
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 const SHARE_CACHE = 'share-target-v1';
 
 // Trata requisições POST do share_target do PWA manifest
