@@ -141,8 +141,11 @@ function CopaHeader({ user }) {
 }
 
 // ─── App principal ────────────────────────────────────────────────────────────
+const DEMO_USER = { uid: 'demo', displayName: 'Demo User', email: 'demo@example.com' };
+
 function CopaStandaloneApp() {
-  const [user, setUser] = useState(undefined); // undefined = carregando
+  const isDemo = new URLSearchParams(window.location.search).get('demo') === '1';
+  const [user, setUser] = useState(isDemo ? DEMO_USER : undefined); // undefined = carregando
   const shareUID = new URLSearchParams(window.location.search).get('share');
 
   useEffect(() => {
@@ -153,8 +156,9 @@ function CopaStandaloneApp() {
   }, []);
 
   useEffect(() => {
+    if (isDemo) return; // skip Firebase auth in demo mode
     return onAuthStateChanged(auth, (u) => setUser(u || null));
-  }, []);
+  }, [isDemo]);
 
   // View de compartilhamento público (sem login)
   if (shareUID) return <CopaShareView shareUID={shareUID} />;
