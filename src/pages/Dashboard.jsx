@@ -122,20 +122,35 @@ export function Dashboard({
         ))}
       </div>
 
-      {(avantzLoading || (avantzPicks && avantzPicks.length > 0)) && (
+      {(avantzLoading || avantzPicks !== null) && (
         <div className="card animate-fade-in" style={{ marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
             <span className="section-title" style={{ margin: 0 }}>PICKS DO DIA</span>
             <span style={{ fontSize: 10, fontWeight: 700, background: "rgba(139,127,245,0.15)", color: "var(--accent)", borderRadius: 4, padding: "2px 7px", letterSpacing: 0.3 }}>AVANTZ</span>
             {avantzLoading && <RefreshCw size={12} style={{ animation: "spin 1s linear infinite", marginLeft: 4, color: "var(--muted)" }} />}
           </div>
+          {!avantzLoading && avantzPicks?.length === 0 && (
+            <div style={{ textAlign: "center", padding: "18px 0 10px", color: "var(--muted)", fontSize: 12 }}>
+              <div style={{ fontSize: 22, marginBottom: 6 }}>🔍</div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Nenhum pick de alto EV hoje</div>
+              <div style={{ fontSize: 11, lineHeight: 1.6 }}>O Avantz analisa Brasileirão, NBA e Roland Garros continuamente.<br/>Picks aparecem quando o modelo detecta vantagem clara.</div>
+            </div>
+          )}
           {avantzPicks?.map((pick, i) => {
             const regUrl = `/register?source=avantz&event=${encodeURIComponent(pick.match || "")}&odds=${encodeURIComponent(pick.odd || "")}&side=${encodeURIComponent(pick.recommendedSide || "")}&sport=${encodeURIComponent(pick.sport || "")}&ref=${encodeURIComponent(pick.externalId || "")}`;
+            const kickoffLabel = pick.kickoffIso
+              ? new Date(pick.kickoffIso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
+              : null;
             return (
               <div key={pick.externalId || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < avantzPicks.length - 1 ? "1px solid var(--border)" : "none" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.recommendedTeam}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.match} · {pick.competitionLabel}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.recommendedTeam}</div>
+                    {pick.tier && <span style={{ fontSize: 9, fontWeight: 700, background: pick.tier === "A" ? "rgba(0,212,138,0.15)" : "rgba(139,127,245,0.15)", color: pick.tier === "A" ? "var(--primary)" : "var(--accent)", borderRadius: 3, padding: "1px 5px", flexShrink: 0 }}>T{pick.tier}</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {pick.match} · {pick.competitionLabel}{kickoffLabel ? ` · ${kickoffLabel}` : ""}
+                  </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, marginRight: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--primary)", fontFamily: "var(--font-mono)" }}>{pick.ev != null ? `+${pick.ev}%` : "—"}</div>
