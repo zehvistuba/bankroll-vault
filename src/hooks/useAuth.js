@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword,
   updateProfile, sendEmailVerification, sendPasswordResetEmail,
 } from "firebase/auth";
+import * as Sentry from "@sentry/react";
 
 export function useAuth() {
   const [user, setUser] = useState(null);
@@ -26,6 +27,12 @@ export function useAuth() {
       setUser(u);
       setUserDisplayName(u?.displayName || u?.email?.split("@")[0] || "");
       setAuthLoading(false);
+      // Sentry user context: attach UID/email to all errors from this session
+      if (u) {
+        Sentry.setUser({ id: u.uid, email: u.email ?? undefined });
+      } else {
+        Sentry.setUser(null);
+      }
     });
     return () => unsub();
   }, []);
