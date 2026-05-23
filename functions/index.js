@@ -178,7 +178,7 @@ exports.adminGetUser = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated");
 
   const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
-  if (!callerSnap.exists() || !callerSnap.data().isAdmin) {
+  if (!callerSnap.exists || !callerSnap.data().isAdmin) {
     throw new HttpsError("permission-denied", "Sem permissão de admin");
   }
 
@@ -194,7 +194,7 @@ exports.adminGetUser = onCall({ cors: true }, async (request) => {
 
   const uid = userRecord.uid;
   const userSnap = await db.doc(`users/${uid}`).get();
-  const userData = userSnap.exists() ? userSnap.data() : {};
+  const userData = userSnap.exists ? userSnap.data() : {};
 
   return {
     uid,
@@ -211,7 +211,7 @@ exports.geminiProxy = onCall({ cors: true, timeoutSeconds: 60, secrets: [geminiS
 
   const uid = request.auth.uid;
   const userSnap = await db.doc(`users/${uid}`).get();
-  const userData = userSnap.exists() ? userSnap.data() : {};
+  const userData = userSnap.exists ? userSnap.data() : {};
 
   // Chave pessoal do usuário tem prioridade
   const userKey = userData?.geminiKey;
@@ -361,7 +361,7 @@ exports.adminSetRole = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated");
 
   const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
-  if (!callerSnap.exists() || !callerSnap.data().isAdmin) {
+  if (!callerSnap.exists || !callerSnap.data().isAdmin) {
     throw new HttpsError("permission-denied", "Sem permissão de admin");
   }
 
